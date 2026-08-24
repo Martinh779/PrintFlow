@@ -13,6 +13,7 @@ public class PrintJob {
     private String fileReference;
     private PrinterProfile profile;
     private Integer priority;
+    private String userId;
     private PrintJobStatus status = PrintJobStatus.CREATED;
     private Instant createdAt = Instant.now();
     private Instant queuedAt;
@@ -29,6 +30,11 @@ public class PrintJob {
         this.fileReference = fileReference;
         this.profile = profile;
         this.priority = priority;
+    }
+
+    public PrintJob(String id, String fileReference, PrinterProfile profile, Integer priority, String userId) {
+        this(id, fileReference, profile, priority);
+        this.userId = userId;
     }
 
     public void transitionTo(PrintJobStatus newStatus) {
