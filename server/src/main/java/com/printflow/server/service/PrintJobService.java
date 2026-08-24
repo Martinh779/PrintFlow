@@ -1,5 +1,6 @@
 package com.printflow.server.service;
 
+import com.printflow.server.dispatcher.Dispatcher;
 import com.printflow.server.exception.BadRequestException;
 import com.printflow.server.exception.InvalidJobStateException;
 import com.printflow.server.exception.ResourceNotFoundException;
@@ -18,9 +19,11 @@ import java.util.UUID;
 public class PrintJobService {
 
     private final PrintJobRepository repository;
+    private final Dispatcher dispatcher;
 
-    public PrintJobService(PrintJobRepository repository) {
+    public PrintJobService(PrintJobRepository repository, Dispatcher dispatcher) {
         this.repository = repository;
+        this.dispatcher = dispatcher;
     }
 
     public PrintJobResponse createJob(CreatePrintJobRequest request) {
@@ -36,6 +39,7 @@ public class PrintJobService {
 
         job.transitionTo(PrintJobStatus.QUEUED);
         repository.save(job);
+        dispatcher.enqueue(job);
 
         return PrintJobResponse.from(job);
     }
@@ -68,13 +72,13 @@ public class PrintJobService {
         }
 
         if (!job.getStatus().canTransitionTo(PrintJobStatus.CANCELLED)) {
-            throw new InvalidJobStateException(
-                    "Cannot cancel job in status " + job.getStatus()
-            );
+            throw new InvalidJobStateException("Cannot cancel job in status " + job.getStatus());
         }
 
         job.cancel();
+        dispatcher.cancelQueuedJob(id);
         repository.save(job);
+
         return PrintJobResponse.from(job);
     }
 
