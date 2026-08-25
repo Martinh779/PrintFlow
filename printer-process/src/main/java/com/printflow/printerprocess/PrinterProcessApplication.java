@@ -28,9 +28,8 @@ public class PrinterProcessApplication {
             System.out.println("Printer Process Started");
             System.out.println("Printer ID: " + printerId + " Server: " + serverHost + ":" + serverPort);
 
-            TcpPrinterClient client = new TcpPrinterClient(serverHost, serverPort);
+            TcpPrinterClient client = new TcpPrinterClient(serverHost, serverPort, printerId, "Printer " + printerId);
             client.connect();
         };
     }
-
 }
