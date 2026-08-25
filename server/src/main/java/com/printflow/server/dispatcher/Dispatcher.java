@@ -2,7 +2,6 @@ package com.printflow.server.dispatcher;
 
 import com.printflow.sharedmodel.model.PrintJob;
 import com.printflow.sharedmodel.model.PrintJobStatus;
-import lombok.Data;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -26,39 +25,61 @@ public class Dispatcher {
         this.strategy = Objects.requireNonNull(strategy, "strategy must not be null");
     }
 
-    @Data
-    public static final class PrinterRegistration {
-        private final String id;
-        private final String name;
-        private final String host;
-        private final int port;
-        private volatile boolean online;
-        private final AtomicInteger activeAssignments = new AtomicInteger();
+        public static final class PrinterRegistration {
+            private final String id;
+            private final String name;
+            private final String host;
+            private final int port;
+            private volatile boolean online;
+            private final AtomicInteger activeAssignments = new AtomicInteger();
+            private final java.util.List<com.printflow.sharedmodel.model.PrinterProfile> supportedProfiles;
 
-        public PrinterRegistration(String id, String name) {
-            this(id, name, "localhost", 0, true);
+            public PrinterRegistration(String id, String name) {
+                this(id, name, "localhost", 0, true, java.util.List.of());
+            }
+
+            public PrinterRegistration(String id, String name, boolean online) {
+                this(id, name, "localhost", 0, online, java.util.List.of());
+            }
+
+            public PrinterRegistration(String id, String name, String host, int port, boolean online) {
+                this(id, name, host, port, online, java.util.List.of());
+            }
+
+            public PrinterRegistration(String id, String name, String host, int port, boolean online, java.util.List<com.printflow.sharedmodel.model.PrinterProfile> supportedProfiles) {
+                this.id = Objects.requireNonNull(id, "printer id must not be null");
+                this.name = Objects.requireNonNull(name, "printer name must not be null");
+                this.host = host == null ? "localhost" : host;
+                this.port = port;
+                this.online = online;
+                this.supportedProfiles = supportedProfiles == null ? java.util.List.of() : supportedProfiles;
+            }
+
+            public String getId() { return id; }
+            public String getName() { return name; }
+            public String getHost() { return host; }
+            public int getPort() { return port; }
+            public boolean isOnline() { return online; }
+            public void setOnline(boolean online) { this.online = online; }
+
+            public void incrementAssignments() {
+                activeAssignments.incrementAndGet();
+            }
+
+            public int getActiveAssignments() {
+                return activeAssignments.get();
         }
 
-        public PrinterRegistration(String id, String name, boolean online) {
-            this(id, name, "localhost", 0, online);
-        }
+            public java.util.List<com.printflow.sharedmodel.model.PrinterProfile> getSupportedProfiles() {
+                return supportedProfiles;
+            }
 
-        public PrinterRegistration(String id, String name, String host, int port, boolean online) {
-            this.id = Objects.requireNonNull(id, "printer id must not be null");
-            this.name = Objects.requireNonNull(name, "printer name must not be null");
-            this.host = host == null ? "localhost" : host;
-            this.port = port;
-            this.online = online;
+            public boolean supportsProfile(com.printflow.sharedmodel.model.PrinterProfile profile) {
+                if (profile == null || profile.getId() == null) return true; // treat null as wildcard
+                if (supportedProfiles == null || supportedProfiles.isEmpty()) return true; // no restriction
+                return supportedProfiles.stream().anyMatch(p -> profile.getId().equals(p.getId()));
+            }
         }
-
-        public void incrementAssignments() {
-            activeAssignments.incrementAndGet();
-        }
-
-        public int getActiveAssignments() {
-            return activeAssignments.get();
-        }
-    }
 
     public void registerPrinter(PrinterRegistration printer) {
         if (printer == null) {

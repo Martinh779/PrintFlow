@@ -99,7 +99,8 @@ public class TcpPrinterServer {
                                         registerMessage.getName(),
                                         registerMessage.getHost(),
                                         registerMessage.getPort(),
-                                        registerMessage.isOnline()
+                                        registerMessage.isOnline(),
+                                        registerMessage.getSupportedProfiles()
                                 )
                         );
                         printerConnections.put(printerId, socket);

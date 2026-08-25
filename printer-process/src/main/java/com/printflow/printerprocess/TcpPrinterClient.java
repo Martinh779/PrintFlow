@@ -1,6 +1,6 @@
 package com.printflow.printerprocess;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.printflow.sharedmodel.model.PrinterProfile;
 import com.printflow.sharedmodel.protocol.PrintJobMessage;
 import com.printflow.sharedmodel.protocol.RegisterPrinterMessage;
 import com.printflow.sharedmodel.protocol.SocketMessage;
@@ -9,7 +9,11 @@ import com.printflow.sharedmodel.protocol.StatusUpdateMessage;
 import java.io.*;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Random;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 public class TcpPrinterClient {
@@ -18,21 +22,26 @@ public class TcpPrinterClient {
     private final int serverPort;
     private final String printerId;
     private final String printerName;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final int capacity;
+    private final List<PrinterProfile> supportedProfiles;
 
-    public TcpPrinterClient(String serverHost, int serverPort, String printerId, String printerName) {
+    public TcpPrinterClient(String serverHost, int serverPort, String printerId, String printerName, int capacity, List<PrinterProfile> supportedProfiles) {
         this.serverHost = serverHost;
         this.serverPort = serverPort;
         this.printerId = printerId;
         this.printerName = printerName;
+        this.capacity = capacity <= 0 ? 1 : capacity;
+        this.supportedProfiles = supportedProfiles == null ? List.of() : supportedProfiles;
     }
 
     public void connect() {
+        ExecutorService pool = Executors.newFixedThreadPool(capacity);
         try (Socket socket = new Socket(serverHost, serverPort);
              BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
              PrintWriter writer = new PrintWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8), true)) {
 
-            RegisterPrinterMessage register = new RegisterPrinterMessage(printerId, printerName, serverHost, serverPort, true);
+            // Register with supported profiles and capacity info
+            RegisterPrinterMessage register = new RegisterPrinterMessage(printerId, printerName, serverHost, serverPort, true, supportedProfiles);
             writer.println(register.toJson());
 
             String line;
@@ -42,19 +51,35 @@ public class TcpPrinterClient {
                 }
                 SocketMessage message = SocketMessage.fromJson(line);
                 if ("PRINT_JOB".equalsIgnoreCase(message.getType())) {
-                    PrintJobMessage printJobMessage = objectMapper.readValue(line, PrintJobMessage.class);
-                    simulatePrint(printJobMessage, writer);
+                    PrintJobMessage printJobMessage = SocketMessage.OBJECT_MAPPER.readValue(line, PrintJobMessage.class);
+                    // Submit simulation to thread pool so multiple jobs can be processed concurrently
+                    pool.submit(() -> {
+                        try {
+                            simulatePrint(printJobMessage, writer);
+                        } catch (IOException e) {
+                            System.err.println("Failed to send status update: " + e.getMessage());
+                        }
+                    });
                 }
             }
         } catch (IOException e) {
             System.out.println("Printer client could not connect to " + serverHost + ":" + serverPort + " - " + e.getMessage());
+        } finally {
+            pool.shutdownNow();
+            try {
+                pool.awaitTermination(2, TimeUnit.SECONDS);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
         }
     }
 
     private void simulatePrint(PrintJobMessage job, PrintWriter writer) throws IOException {
         long durationMs = 300 + new Random().nextInt(700);
         StatusUpdateMessage printing = StatusUpdateMessage.printing(printerId, job.getJobId());
-        writer.println(printing.toJson());
+        synchronized (writer) {
+            writer.println(printing.toJson());
+        }
 
         try {
             TimeUnit.MILLISECONDS.sleep(durationMs);
@@ -63,6 +88,8 @@ public class TcpPrinterClient {
         }
 
         StatusUpdateMessage completed = StatusUpdateMessage.completed(printerId, job.getJobId(), durationMs);
-        writer.println(completed.toJson());
+        synchronized (writer) {
+            writer.println(completed.toJson());
+        }
     }
 }
