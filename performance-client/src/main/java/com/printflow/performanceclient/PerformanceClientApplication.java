@@ -66,7 +66,7 @@ public class PerformanceClientApplication {
 
             BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
             System.out.println("PrintFlow Interactive Client");
-            String menu = "\nChoose action:\n1) Create Job\n2) Get Job by ID\n3) List Jobs (optionally by user)\n4) Cancel Job\n5) Get Result\n6) Exit\n> ";
+            String menu = "\nChoose action:\n1) Create Job\n2) Get Job by ID\n3) List Jobs (optionally by user)\n4) Cancel Job\n5) Get Result\n6) Exit\n7) Create example job\n> ";
 
             while (true) {
                 System.out.print(menu);
@@ -106,6 +106,9 @@ public class PerformanceClientApplication {
                         case "6":
                             System.out.println("Exiting interactive client.");
                             return;
+                        case "7":
+                            createExampleJob(restTemplate);
+                            break;
                         default:
                             System.out.println("Unknown option");
                     }
@@ -158,4 +161,31 @@ public class PerformanceClientApplication {
         ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
         System.out.println("Create response: " + response.getStatusCode() + " - " + response.getBody());
     }
+
+    private void createExampleJob(RestTemplate restTemplate) {
+        Map<String, Object> profile = new HashMap<>();
+        profile.put("id", "default-profile");
+        profile.put("name", "A4 Color");
+        profile.put("paperSize", "A4");
+        profile.put("colorMode", "COLOR");
+        profile.put("duplexSupported", false);
+
+        Map<String, Object> request = new HashMap<>();
+        request.put("fileReference", "example-document.pdf");
+        request.put("profile", profile);
+        request.put("priority", 1);
+        request.put("userId", "example-user");
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(request, headers);
+        String url = serverBaseUrl + "/api/jobs";
+        try {
+            ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
+            System.out.println("Example create response: " + response.getStatusCode() + " - " + response.getBody());
+        } catch (Exception ex) {
+            System.out.println("Failed to create example job: " + ex.getMessage());
+        }
+    }
 }
+
