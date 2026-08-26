@@ -23,10 +23,12 @@ public class PrintJobService {
 
     private final PrintJobRepository repository;
     private final Dispatcher dispatcher;
+    private final org.springframework.context.ApplicationEventPublisher eventPublisher;
 
-    public PrintJobService(PrintJobRepository repository, Dispatcher dispatcher) {
+    public PrintJobService(PrintJobRepository repository, Dispatcher dispatcher, org.springframework.context.ApplicationEventPublisher eventPublisher) {
         this.repository = repository;
         this.dispatcher = dispatcher;
+        this.eventPublisher = eventPublisher;
     }
 
     public PrintJobResponse createJob(CreatePrintJobRequest request) {
@@ -42,7 +44,8 @@ public class PrintJobService {
         job.transitionTo(PrintJobStatus.QUEUED);
         repository.save(job);
         dispatcher.enqueue(job);
-        dispatcher.dispatchAll();
+        // notify listeners (e.g., TcpPrinterServer) that a job is enqueued so it can attempt dispatch
+        eventPublisher.publishEvent(new JobEnqueuedEvent(job.getId()));
 
         return PrintJobResponse.from(job);
     }
@@ -59,6 +62,9 @@ public class PrintJobService {
                 }
             }
             case "ABGESCHLOSSEN", "COMPLETED" -> {
+                if (job.isTerminal()) {
+                    break;
+                }
                 if (job.getStatus() != PrintJobStatus.COMPLETED) {
                     job.transitionTo(PrintJobStatus.COMPLETED);
                 }
@@ -71,22 +77,64 @@ public class PrintJobService {
                         detail == null ? "Completed successfully" : detail
                 ));
             }
-            case "FEHLGESCHLAGEN", "FAILED" -> {
-                job.transitionTo(PrintJobStatus.FAILED);
-                job.setAssignedPrinterId(printerId);
-                job.setErrorMessage(detail == null ? "Print failed" : detail);
-                job.setResult(new PrintResult(
-                        printerId,
-                        Duration.ofMillis(durationMs),
-                        Instant.now(),
-                        false,
-                        job.getErrorMessage()
-                ));
-            }
+            case "FEHLGESCHLAGEN", "FAILED" -> handlePrinterFailure(job, printerId, detail, durationMs);
             default -> { }
         }
 
         repository.save(job);
+    }
+
+    public void recoverJobsForPrinter(String printerId) {
+        if (printerId == null || printerId.isBlank()) {
+            return;
+        }
+
+        List<PrintJob> affectedJobs = repository.findAll().stream()
+                .filter(job -> printerId.equals(job.getAssignedPrinterId()) && !job.isTerminal())
+                .toList();
+
+        for (PrintJob job : affectedJobs) {
+            if (job.getStatus() == PrintJobStatus.CANCELLED || job.isTerminal()) {
+                continue;
+            }
+            if (job.getStatus() == PrintJobStatus.ASSIGNED || job.getStatus() == PrintJobStatus.PRINTING) {
+                job.setErrorMessage("Printer disconnected; job returned to queue for retry");
+                dispatcher.unassignJob(job);
+                eventPublisher.publishEvent(new JobEnqueuedEvent(job.getId()));
+                repository.save(job);
+            }
+        }
+    }
+
+    private void handlePrinterFailure(PrintJob job, String printerId, String detail, long durationMs) {
+        if (job == null || job.isTerminal()) {
+            return;
+        }
+
+        String errorMessage = detail == null || detail.isBlank() ? "Print failed" : detail;
+        job.setErrorMessage(errorMessage);
+
+        try {
+            dispatcher.setPrinterOnline(printerId, false);
+        } catch (IllegalArgumentException ignored) {
+            // The printer may already be removed; retry elsewhere without failing the whole flow.
+        }
+
+        if (job.getStatus() == PrintJobStatus.ASSIGNED || job.getStatus() == PrintJobStatus.PRINTING) {
+            dispatcher.unassignJob(job);
+            eventPublisher.publishEvent(new JobEnqueuedEvent(job.getId()));
+            return;
+        }
+
+        job.transitionTo(PrintJobStatus.FAILED);
+        job.setAssignedPrinterId(printerId);
+        job.setResult(new PrintResult(
+                printerId,
+                Duration.ofMillis(durationMs),
+                Instant.now(),
+                false,
+                errorMessage
+        ));
     }
 
     public PrintJobResponse getJob(String id) {

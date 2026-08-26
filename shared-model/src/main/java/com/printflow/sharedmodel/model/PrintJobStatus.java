@@ -21,8 +21,8 @@ public enum PrintJobStatus {
         return switch (this) {
             case CREATED -> nextStatus == QUEUED || nextStatus == CANCELLED;
             case QUEUED -> nextStatus == ASSIGNED || nextStatus == CANCELLED;
-            case ASSIGNED -> nextStatus == PRINTING || nextStatus == CANCELLED || nextStatus == FAILED;
-            case PRINTING -> nextStatus == COMPLETED || nextStatus == FAILED;
+            case ASSIGNED -> nextStatus == QUEUED || nextStatus == PRINTING || nextStatus == CANCELLED || nextStatus == FAILED;
+            case PRINTING -> nextStatus == QUEUED || nextStatus == COMPLETED || nextStatus == FAILED;
             case COMPLETED, CANCELLED, FAILED -> false;
         };
     }

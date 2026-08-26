@@ -5,11 +5,12 @@ import com.printflow.sharedmodel.protocol.PrintJobMessage;
 import com.printflow.sharedmodel.protocol.RegisterPrinterMessage;
 import com.printflow.sharedmodel.protocol.SocketMessage;
 import com.printflow.sharedmodel.protocol.StatusUpdateMessage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.ExecutorService;
@@ -18,6 +19,8 @@ import java.util.concurrent.TimeUnit;
 
 public class TcpPrinterClient {
 
+    private static final Logger log = LoggerFactory.getLogger(TcpPrinterClient.class);
+
     private final String serverHost;
     private final int serverPort;
     private final String printerId;
@@ -25,45 +28,71 @@ public class TcpPrinterClient {
     private final int capacity;
     private final List<PrinterProfile> supportedProfiles;
 
+    // reconnect interval in ms
+    private final long reconnectIntervalMs;
+
     public TcpPrinterClient(String serverHost, int serverPort, String printerId, String printerName, int capacity, List<PrinterProfile> supportedProfiles) {
+        this(serverHost, serverPort, printerId, printerName, capacity, supportedProfiles, 2000);
+    }
+
+    public TcpPrinterClient(String serverHost, int serverPort, String printerId, String printerName, int capacity, List<PrinterProfile> supportedProfiles, long reconnectIntervalMs) {
         this.serverHost = serverHost;
         this.serverPort = serverPort;
         this.printerId = printerId;
         this.printerName = printerName;
         this.capacity = capacity <= 0 ? 1 : capacity;
         this.supportedProfiles = supportedProfiles == null ? List.of() : supportedProfiles;
+        this.reconnectIntervalMs = reconnectIntervalMs;
     }
 
     public void connect() {
         ExecutorService pool = Executors.newFixedThreadPool(capacity);
-        try (Socket socket = new Socket(serverHost, serverPort);
-             BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
-             PrintWriter writer = new PrintWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8), true)) {
+        try {
+            while (!Thread.currentThread().isInterrupted()) {
+                try (Socket socket = new Socket(serverHost, serverPort);
+                     BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
+                     PrintWriter writer = new PrintWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8), true)) {
 
-            // Register with supported profiles and capacity info
-            RegisterPrinterMessage register = new RegisterPrinterMessage(printerId, printerName, serverHost, serverPort, true, supportedProfiles);
-            writer.println(register.toJson());
+                    log.info("Connected to print server {}:{}", serverHost, serverPort);
 
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (line.isBlank()) {
-                    continue;
-                }
-                SocketMessage message = SocketMessage.fromJson(line);
-                if ("PRINT_JOB".equalsIgnoreCase(message.getType())) {
-                    PrintJobMessage printJobMessage = SocketMessage.OBJECT_MAPPER.readValue(line, PrintJobMessage.class);
-                    // Submit simulation to thread pool so multiple jobs can be processed concurrently
-                    pool.submit(() -> {
-                        try {
-                            simulatePrint(printJobMessage, writer);
-                        } catch (IOException e) {
-                            System.err.println("Failed to send status update: " + e.getMessage());
+                    // Register with supported profiles and capacity info
+                    RegisterPrinterMessage register = new RegisterPrinterMessage(printerId, printerName, serverHost, serverPort, true, supportedProfiles);
+                    writer.println(register.toJson());
+
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        if (line.isBlank()) {
+                            continue;
                         }
-                    });
+                        SocketMessage message = SocketMessage.fromJson(line);
+                        if (message == null) continue;
+                        if ("PRINT_JOB".equalsIgnoreCase(message.getType())) {
+                            PrintJobMessage printJobMessage = SocketMessage.OBJECT_MAPPER.readValue(line, PrintJobMessage.class);
+                            // Submit simulation to thread pool so multiple jobs can be processed concurrently
+                            pool.submit(() -> {
+                                try {
+                                    simulatePrint(printJobMessage, writer);
+                                } catch (IOException e) {
+                                    log.error("Failed to send status update: {}", e.getMessage());
+                                }
+                            });
+                        }
+                    }
+
+                    log.info("Connection closed by server {}:{}", serverHost, serverPort);
+                } catch (IOException e) {
+                    log.warn("Printer client could not connect to {}:{} - {}", serverHost, serverPort, e.getMessage());
+                }
+
+                // sleep before retrying
+                try {
+                    log.info("Reconnecting to {}:{} in {} ms", serverHost, serverPort, reconnectIntervalMs);
+                    TimeUnit.MILLISECONDS.sleep(reconnectIntervalMs);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
                 }
             }
-        } catch (IOException e) {
-            System.out.println("Printer client could not connect to " + serverHost + ":" + serverPort + " - " + e.getMessage());
         } finally {
             pool.shutdownNow();
             try {
@@ -75,7 +104,7 @@ public class TcpPrinterClient {
     }
 
     private void simulatePrint(PrintJobMessage job, PrintWriter writer) throws IOException {
-        long durationMs = 300 + new Random().nextInt(700);
+        long durationMs = 3000 + new Random().nextInt(7000);
         StatusUpdateMessage printing = StatusUpdateMessage.printing(printerId, job.getJobId());
         synchronized (writer) {
             writer.println(printing.toJson());
