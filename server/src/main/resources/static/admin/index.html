@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>PrintFlow Admin Dashboard</title>
+  <link rel="stylesheet" href="/admin/style.css">
+</head>
+<body>
+  <header>
+    <h1>PrintFlow Admin Dashboard</h1>
+    <div id="health" class="chip">Loading...</div>
+  </header>
+
+  <main>
+    <section class="pane">
+      <h2>Printers <small id="printer-count"></small></h2>
+      <div id="printers" class="list">Loading printers...</div>
+
+      <form id="add-printer-form">
+        <h3>Add Printer</h3>
+        <label>Id <input name="id" required></label>
+        <label>Name <input name="name"></label>
+        <label>Host <input name="host" placeholder="localhost"></label>
+        <label>Port <input name="port" type="number" min="0" placeholder="0"></label>
+        <label>Supported profiles (comma separated ids) <input name="profiles"></label>
+        <label>Online <input type="checkbox" name="online" checked></label>
+        <label>Connect immediately <input type="checkbox" name="connect"></label>
+        <button type="submit">Add Printer</button>
+      </form>
+    </section>
+
+    <section class="pane">
+      <h2>Queue <small id="queue-size"></small></h2>
+      <div id="queue" class="list">Loading queue...</div>
+
+      <h3>Create Job</h3>
+      <form id="create-job-form">
+        <label>File reference <input name="fileReference" required placeholder="example.pdf or path/to/file"></label>
+        <label>Profile id (optional) <input name="profileId" placeholder="profile-1"></label>
+        <label>Priority <input name="priority" type="number" value="1" min="1" required></label>
+        <label>User ID <input name="userId" placeholder="username"></label>
+        <button type="submit">Create Job</button>
+      </form>
+
+      <h2>Jobs</h2>
+      <div id="jobs" class="list">Loading jobs...</div>
+    </section>
+  </main>
+
+  <footer>
+    <small>Auto-refresh every 3s • Served from server/static/admin</small>
+  </footer>
+
+  <script src="/admin/app.js"></script>
+</body>
+</html>

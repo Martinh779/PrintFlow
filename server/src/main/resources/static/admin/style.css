@@ -1,0 +1,18 @@
+* { box-sizing: border-box; font-family: Inter, system-ui, Arial, sans-serif; }
+body { margin: 0; background: #f6f8fa; color: #222; }
+header { display:flex; align-items:center; justify-content:space-between; padding:16px 24px; background:#0b5fff; color:white }
+header h1 { margin:0; font-size:18px }
+.chip { background: rgba(255,255,255,0.15); padding:6px 10px; border-radius:8px }
+main { display:flex; gap:16px; padding:16px; }
+.pane { background:white; padding:12px; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.06); flex:1 }
+.list { margin-top:8px; }
+.printer { border:1px solid #eee; padding:8px; border-radius:6px; margin-bottom:8px }
+.job-row { border-bottom:1px dashed #eee; padding:8px 0 }
+.muted { color:#666; font-size:12px }
+.row { display:flex; gap:8px; align-items:center }
+.actions { margin-top:8px }
+button { background:#0b5fff; color:white; border:none; padding:6px 10px; border-radius:6px; cursor:pointer }
+button:active{ transform:translateY(1px) }
+form label { display:block; margin:6px 0 }
+input[type="text"], input { padding:6px; width:100%; }
+footer { padding:8px 16px; color:#666 }
