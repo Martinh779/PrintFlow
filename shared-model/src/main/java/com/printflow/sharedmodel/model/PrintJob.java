@@ -1,5 +1,6 @@
 package com.printflow.sharedmodel.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
@@ -92,6 +93,7 @@ public class PrintJob {
         PrintJobStatusMachine.cancel(this);
     }
 
+    @JsonIgnore
     public boolean isTerminal() {
         return status != null && status.isTerminal();
     }
