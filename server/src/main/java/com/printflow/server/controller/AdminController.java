@@ -1,15 +1,23 @@
 package com.printflow.server.controller;
 
 import com.printflow.server.dispatcher.Dispatcher;
+import com.printflow.server.events.ServerEventLogger;
+import com.printflow.server.events.SystemEvent;
+import com.printflow.server.events.SystemEventType;
 import com.printflow.server.repository.PrintJobRepository;
+import com.printflow.server.socket.PrinterConnectionRegistry;
 import com.printflow.server.socket.PrinterSimulatorManager;
 import com.printflow.server.socket.TcpPrinterServer;
+import com.printflow.sharedmodel.model.PrintJob;
+import com.printflow.sharedmodel.model.PrintJobStatus;
 import com.printflow.sharedmodel.model.PrinterProfile;
 import org.springframework.http.ResponseEntity;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @RestController
@@ -20,12 +28,26 @@ public class AdminController {
     private final PrintJobRepository repository;
     private final TcpPrinterServer tcpPrinterServer;
     private final PrinterSimulatorManager simulatorManager;
+    private final ServerEventLogger eventLogger;
+    private final PrinterConnectionRegistry connectionRegistry;
 
     public AdminController(Dispatcher dispatcher, PrintJobRepository repository, TcpPrinterServer tcpPrinterServer, PrinterSimulatorManager simulatorManager) {
+        this(dispatcher, repository, tcpPrinterServer, simulatorManager, null, null);
+    }
+
+    @Autowired
+    public AdminController(Dispatcher dispatcher,
+                           PrintJobRepository repository,
+                           TcpPrinterServer tcpPrinterServer,
+                           PrinterSimulatorManager simulatorManager,
+                           ServerEventLogger eventLogger,
+                           PrinterConnectionRegistry connectionRegistry) {
         this.dispatcher = dispatcher;
         this.repository = repository;
         this.tcpPrinterServer = tcpPrinterServer;
         this.simulatorManager = simulatorManager;
+        this.eventLogger = eventLogger;
+        this.connectionRegistry = connectionRegistry;
     }
 
     @GetMapping("/health")
@@ -76,20 +98,42 @@ public class AdminController {
 
     @GetMapping("/printers")
     public ResponseEntity<List<Map<String, Object>>> listPrinters() {
+        List<SystemEvent> events = eventLogger == null ? List.of() : eventLogger.getEvents();
+        Map<String, SystemEvent> latestEventByPrinter = latestEventByPrinter(events);
+        Set<String> recoveringPrinterIds = recoveringPrinterIds(events, Instant.now().minusSeconds(300));
+        Map<String, Instant> lastSeenByPrinter = Optional.ofNullable(tcpPrinterServer.getPrinterLastSeenSnapshot()).orElseGet(Map::of);
+
         List<Map<String, Object>> printers = dispatcher.getRegisteredPrinters().stream()
-                .map(this::toPrinterResponse)
+                .map(printer -> toPrinterResponse(
+                        printer,
+                        lastSeenByPrinter.get(printer.getId()),
+                        latestEventByPrinter.get(printer.getId()),
+                        recoveringPrinterIds.contains(printer.getId())
+                ))
                 .collect(Collectors.toList());
         return ResponseEntity.ok(printers);
     }
 
-    private Map<String, Object> toPrinterResponse(Dispatcher.PrinterRegistration printer) {
+    private Map<String, Object> toPrinterResponse(Dispatcher.PrinterRegistration printer,
+                                                  Instant lastSeen,
+                                                  SystemEvent latestEvent,
+                                                  boolean recovering) {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("id", printer.getId());
         response.put("name", printer.getName());
         response.put("host", printer.getHost());
         response.put("port", printer.getPort());
         response.put("online", printer.isOnline());
+        boolean connected = connectionRegistry != null && connectionRegistry.hasConnection(printer.getId());
+        response.put("connected", connected);
+        response.put("lastSeenAt", lastSeen == null ? null : lastSeen.toString());
         response.put("activeAssignments", printer.getActiveAssignments());
+        response.put("recoveryState", determineRecoveryState(printer.isOnline(), connected, recovering));
+        response.put("latestEvent", latestEvent == null ? null : Map.of(
+                "type", latestEvent.getType() == null ? null : latestEvent.getType().name(),
+                "message", latestEvent.getMessage(),
+                "createdAt", latestEvent.getCreatedAt() == null ? null : latestEvent.getCreatedAt().toString()
+        ));
         response.put("supportedProfiles", printer.getSupportedProfiles().stream()
                 .map(profile -> Map.of("id", profile.getId(), "name", profile.getName()))
                 .collect(Collectors.toList()));
@@ -219,5 +263,110 @@ public class AdminController {
             return jm;
         }).collect(Collectors.toList());
         return ResponseEntity.ok(jobs);
+    }
+
+    @GetMapping("/monitoring")
+    public ResponseEntity<Map<String, Object>> monitoring() {
+        List<PrintJob> jobs = repository.findAll();
+        List<SystemEvent> events = eventLogger == null ? List.of() : eventLogger.getEvents();
+        Instant now = Instant.now();
+        Instant throughputWindowStart = now.minusSeconds(300);
+        Instant eventWindowStart = now.minusSeconds(900);
+
+        Map<String, Long> jobStatusCounts = Arrays.stream(PrintJobStatus.values())
+                .collect(Collectors.toMap(
+                        Enum::name,
+                        status -> jobs.stream().filter(job -> status == job.getStatus()).count(),
+                        Long::sum,
+                        LinkedHashMap::new
+                ));
+
+        long completedInLast5Min = jobs.stream()
+                .filter(job -> job.getStatus() == PrintJobStatus.COMPLETED)
+                .filter(job -> job.getCompletedAt() != null && !job.getCompletedAt().isBefore(throughputWindowStart))
+                .count();
+
+        double throughputPerMinute = Math.round((completedInLast5Min / 5.0d) * 100.0d) / 100.0d;
+
+        long failedTerminalJobs = jobs.stream()
+                .filter(job -> job.getStatus() == PrintJobStatus.FAILED)
+                .count();
+        long terminalJobs = jobs.stream()
+                .filter(PrintJob::isTerminal)
+                .count();
+        double failedTerminalRate = terminalJobs == 0 ? 0.0d : Math.round((failedTerminalJobs * 10000.0d / terminalJobs)) / 100.0d;
+
+        long printerFailures = countEventsSince(events, SystemEventType.PRINTER_FAILED, eventWindowStart);
+        long disconnects = countEventsSince(events, SystemEventType.SOCKET_DISCONNECT, eventWindowStart);
+        long recoveries = countEventsSince(events, SystemEventType.RETRY_RECOVERY, eventWindowStart);
+
+        Map<String, Object> metrics = new LinkedHashMap<>();
+        metrics.put("window", Map.of(
+                "throughputSeconds", 300,
+                "errorsSeconds", 900
+        ));
+        metrics.put("throughput", Map.of(
+                "completedLast5Min", completedInLast5Min,
+                "completedPerMinute", throughputPerMinute
+        ));
+        metrics.put("errors", Map.of(
+                "failedTerminalJobs", failedTerminalJobs,
+                "terminalJobs", terminalJobs,
+                "failedTerminalRatePercent", failedTerminalRate,
+                "printerFailuresLast15Min", printerFailures,
+                "disconnectsLast15Min", disconnects
+        ));
+        metrics.put("recovery", Map.of(
+                "recoveriesLast15Min", recoveries,
+                "currentlyQueuedForRetry", jobs.stream()
+                        .filter(job -> job.getStatus() == PrintJobStatus.QUEUED)
+                        .filter(job -> job.getErrorMessage() != null && job.getErrorMessage().toLowerCase(Locale.ROOT).contains("retry"))
+                        .count()
+        ));
+        metrics.put("jobHealth", jobStatusCounts);
+        return ResponseEntity.ok(metrics);
+    }
+
+    private long countEventsSince(List<SystemEvent> events, SystemEventType type, Instant startInclusive) {
+        return events.stream()
+                .filter(event -> type == event.getType())
+                .filter(event -> event.getCreatedAt() != null && !event.getCreatedAt().isBefore(startInclusive))
+                .count();
+    }
+
+    private Map<String, SystemEvent> latestEventByPrinter(List<SystemEvent> events) {
+        return events.stream()
+                .filter(event -> event.getPrinterId() != null && !event.getPrinterId().isBlank())
+                .collect(Collectors.toMap(
+                        SystemEvent::getPrinterId,
+                        Function.identity(),
+                        (left, right) -> {
+                            Instant leftTime = left.getCreatedAt() == null ? Instant.EPOCH : left.getCreatedAt();
+                            Instant rightTime = right.getCreatedAt() == null ? Instant.EPOCH : right.getCreatedAt();
+                            return rightTime.isAfter(leftTime) ? right : left;
+                        },
+                        LinkedHashMap::new
+                ));
+    }
+
+    private Set<String> recoveringPrinterIds(List<SystemEvent> events, Instant windowStart) {
+        return events.stream()
+                .filter(event -> event.getPrinterId() != null && !event.getPrinterId().isBlank())
+                .filter(event -> event.getCreatedAt() != null && !event.getCreatedAt().isBefore(windowStart))
+                .filter(event -> event.getType() == SystemEventType.RETRY_RECOVERY
+                        || event.getType() == SystemEventType.PRINTER_FAILED
+                        || event.getType() == SystemEventType.SOCKET_DISCONNECT)
+                .map(SystemEvent::getPrinterId)
+                .collect(Collectors.toSet());
+    }
+
+    private String determineRecoveryState(boolean online, boolean connected, boolean recovering) {
+        if (recovering) {
+            return "RECOVERING";
+        }
+        if (!online || !connected) {
+            return "DEGRADED";
+        }
+        return "STABLE";
     }
 }

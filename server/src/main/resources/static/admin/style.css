@@ -15,4 +15,7 @@ button { background:#0b5fff; color:white; border:none; padding:6px 10px; border-
 button:active{ transform:translateY(1px) }
 form label { display:block; margin:6px 0 }
 input[type="text"], input { padding:6px; width:100%; }
+.status-stable { color: #0a7f35; font-weight: 600; }
+.status-degraded { color: #aa6a00; font-weight: 600; }
+.status-recovering { color: #a61e1e; font-weight: 600; }
 footer { padding:8px 16px; color:#666 }

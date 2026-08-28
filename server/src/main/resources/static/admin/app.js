@@ -3,6 +3,7 @@ const API = {
   printers: '/api/admin/printers',
   queue: '/api/admin/queue',
   dispatchPolicy: '/api/admin/dispatch-policy',
+  monitoring: '/api/admin/monitoring',
   jobs: '/api/jobs'
 };
 
@@ -16,19 +17,21 @@ function el(tag, cls) { const e = document.createElement(tag); if (cls) e.classN
 
 async function refresh() {
   try {
-    const [health, printers, queue, jobs, dispatchPolicy] = await Promise.all([
+    const [health, printers, queue, jobs, dispatchPolicy, monitoring] = await Promise.all([
       fetchJson(API.health),
       fetchJson(API.printers),
       fetchJson(API.queue),
       fetchJson(API.jobs),
-      fetchJson(API.dispatchPolicy)
+      fetchJson(API.dispatchPolicy),
+      fetchJson(API.monitoring)
     ]);
 
-    document.getElementById('health').textContent = `${health.status} @ ${new Date(health.time).toLocaleTimeString()}`;
+    document.getElementById('health').textContent = `${health.status} @ ${new Date(health.time).toLocaleTimeString()} • strategy=${health.dispatchStrategy}`;
     document.getElementById('printer-count').textContent = `(${printers.length})`;
     document.getElementById('queue-size').textContent = `(${health.queueSize})`;
 
     renderDispatchPolicy(dispatchPolicy);
+    renderMonitoring(monitoring);
     renderPrinters(printers);
     renderQueue(queue);
     renderJobs(jobs);
@@ -74,8 +77,16 @@ function renderPrinters(printers) {
     card.appendChild(h);
 
     const info = el('div','muted');
-    info.textContent = `${p.host || 'localhost'}:${p.port || 0} • online=${p.online} • active=${p.activeAssignments} • sim=${p.simulatorRunning ? 'yes' : 'no'}`;
+    const stateClass = p.recoveryState === 'STABLE' ? 'status-stable' : p.recoveryState === 'DEGRADED' ? 'status-degraded' : 'status-recovering';
+    const lastSeen = p.lastSeenAt ? new Date(p.lastSeenAt).toLocaleTimeString() : '-';
+    info.innerHTML = `${p.host || 'localhost'}:${p.port || 0} • online=${p.online} • connected=${p.connected} • active=${p.activeAssignments} • sim=${p.simulatorRunning ? 'yes' : 'no'}<br><span class="${stateClass}">recovery=${p.recoveryState || '-'}</span> • lastSeen=${lastSeen}`;
     card.appendChild(info);
+
+    if (p.latestEvent) {
+      const latest = el('div', 'muted');
+      latest.textContent = `Latest event: ${p.latestEvent.type || '-'} • ${p.latestEvent.message || '-'} • ${p.latestEvent.createdAt ? new Date(p.latestEvent.createdAt).toLocaleTimeString() : '-'}`;
+      card.appendChild(latest);
+    }
 
     const prof = el('div','profiles');
     prof.textContent = 'Profiles: ' + (p.supportedProfiles && p.supportedProfiles.length ? p.supportedProfiles.map(x=>x.id||x.name).join(', ') : 'any');
@@ -181,8 +192,31 @@ function renderJobs(jobs) {
   if (!jobs.length) { c.textContent = 'No jobs'; return; }
   jobs.slice().reverse().slice(0,50).forEach(j => {
     const row = el('div','job-row');
-    row.innerHTML = `<strong>${j.id}</strong> • ${j.fileReference} • ${j.status} • user=${j.userId||'-'}<br><small class="muted">created=${new Date(j.createdAt).toLocaleString()} assignedPrinter=${j.assignedPrinterId||'-'}</small>`;
+    const errorPart = j.errorMessage ? ` • error=${j.errorMessage}` : '';
+    row.innerHTML = `<strong>${j.id}</strong> • ${j.fileReference} • ${j.status} • user=${j.userId||'-'}${errorPart}<br><small class="muted">created=${new Date(j.createdAt).toLocaleString()} assignedPrinter=${j.assignedPrinterId||'-'}</small>`;
     c.appendChild(row);
+  });
+}
+
+function renderMonitoring(monitoring) {
+  const throughput = monitoring && monitoring.throughput ? monitoring.throughput : {};
+  const errors = monitoring && monitoring.errors ? monitoring.errors : {};
+  const recovery = monitoring && monitoring.recovery ? monitoring.recovery : {};
+  const health = monitoring && monitoring.jobHealth ? monitoring.jobHealth : {};
+
+  document.getElementById('monitoring-throughput').textContent =
+    `Throughput: ${throughput.completedPerMinute || 0}/min (${throughput.completedLast5Min || 0} completed in last 5m)`;
+  document.getElementById('monitoring-errors').textContent =
+    `Errors: failed-terminal-rate=${errors.failedTerminalRatePercent || 0}% • printer-failures=${errors.printerFailuresLast15Min || 0} • disconnects=${errors.disconnectsLast15Min || 0} (last 15m)`;
+  document.getElementById('monitoring-recovery').textContent =
+    `Recovery: retries=${recovery.recoveriesLast15Min || 0} • queued-for-retry=${recovery.currentlyQueuedForRetry || 0} (last 15m)`;
+
+  const healthContainer = document.getElementById('monitoring-job-health');
+  healthContainer.innerHTML = '';
+  Object.keys(health).forEach(key => {
+    const row = el('div', 'job-row');
+    row.textContent = `${key}: ${health[key]}`;
+    healthContainer.appendChild(row);
   });
 }
 

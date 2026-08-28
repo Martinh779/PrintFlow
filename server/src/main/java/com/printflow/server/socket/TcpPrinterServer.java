@@ -366,6 +366,10 @@ public class TcpPrinterServer {
         return false;
     }
 
+    public Map<String, Instant> getPrinterLastSeenSnapshot() {
+        return Map.copyOf(printerLastSeen);
+    }
+
     private String readMessageType(String jsonPayload) throws IOException {
         if (jsonPayload == null || jsonPayload.isBlank()) {
             return null;
