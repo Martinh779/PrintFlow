@@ -3,20 +3,45 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>PrintFlow Admin Dashboard</title>
+  <title>PrintFlow Admin Cockpit</title>
   <link rel="stylesheet" href="/admin/style.css">
 </head>
 <body>
-  <header>
-    <h1>PrintFlow Admin Dashboard</h1>
+  <header class="topbar">
+    <div>
+      <h1>PrintFlow Admin Cockpit</h1>
+      <p class="muted">Distributed print simulation and NFA verification</p>
+    </div>
     <div id="health" class="chip">Loading...</div>
   </header>
 
-  <main>
+  <div id="notice" class="notice hidden"></div>
+
+  <main class="layout">
+    <section class="pane">
+      <h2>Monitoring</h2>
+      <div class="metric-grid">
+        <div class="metric-card">
+          <span class="label">Throughput</span>
+          <strong id="monitoring-throughput">Loading...</strong>
+        </div>
+        <div class="metric-card">
+          <span class="label">Errors</span>
+          <strong id="monitoring-errors">Loading...</strong>
+        </div>
+        <div class="metric-card">
+          <span class="label">Recovery</span>
+          <strong id="monitoring-recovery">Loading...</strong>
+        </div>
+      </div>
+      <h3>Job Health</h3>
+      <div id="monitoring-job-health" class="list">Loading job health...</div>
+    </section>
+
     <section class="pane">
       <h2>Dispatch Policy</h2>
       <div id="dispatch-policy-current" class="muted">Loading policy...</div>
-      <form id="dispatch-policy-form">
+      <form id="dispatch-policy-form" class="stack-form">
         <label>Strategy
           <select id="dispatch-strategy-select" name="strategy"></select>
         </label>
@@ -26,51 +51,58 @@
     </section>
 
     <section class="pane">
-      <h2>Monitoring</h2>
-      <div id="monitoring-throughput" class="job-row">Loading throughput...</div>
-      <div id="monitoring-errors" class="job-row">Loading errors...</div>
-      <div id="monitoring-recovery" class="job-row">Loading recovery state...</div>
-      <h3>Job Health</h3>
-      <div id="monitoring-job-health" class="list">Loading job health...</div>
+      <h2>Load Control</h2>
+      <form id="bulk-create-form" class="stack-form">
+        <h3>Bulk Create Jobs</h3>
+        <label>Count <input name="count" type="number" min="1" value="100" required></label>
+        <label>File prefix <input name="filePrefix" value="nfa-job"></label>
+        <label>Start index <input name="startIndex" type="number" min="1" value="1"></label>
+        <label>Profile ID (optional) <input name="profileId" placeholder="profile-1"></label>
+        <label>Priority <input name="priority" type="number" min="1" value="1" required></label>
+        <label>User ID <input name="userId" value="admin-bulk"></label>
+        <button type="submit">Create Bulk Jobs</button>
+      </form>
+
+      <form id="create-job-form" class="stack-form">
+        <h3>Create Single Job</h3>
+        <label>File reference <input name="fileReference" required placeholder="example.pdf"></label>
+        <label>Profile ID (optional) <input name="profileId" placeholder="profile-1"></label>
+        <label>Priority <input name="priority" type="number" value="1" min="1" required></label>
+        <label>User ID <input name="userId" value="admin"></label>
+        <button type="submit">Create Job</button>
+      </form>
     </section>
 
     <section class="pane">
       <h2>Printers <small id="printer-count"></small></h2>
       <div id="printers" class="list">Loading printers...</div>
 
-      <form id="add-printer-form">
+      <form id="add-printer-form" class="stack-form">
         <h3>Add Printer</h3>
-        <label>Id <input name="id" required></label>
+        <label>ID <input name="id" required></label>
         <label>Name <input name="name"></label>
         <label>Host <input name="host" placeholder="localhost"></label>
         <label>Port <input name="port" type="number" min="0" placeholder="0"></label>
-        <label>Supported profiles (comma separated ids) <input name="profiles"></label>
-        <label>Online <input type="checkbox" name="online" checked></label>
-        <label>Connect immediately <input type="checkbox" name="connect"></label>
+        <label>Supported profiles (comma separated IDs) <input name="profiles"></label>
+        <label class="inline"><input type="checkbox" name="online" checked> Online</label>
+        <label class="inline"><input type="checkbox" name="connect"> Connect immediately</label>
         <button type="submit">Add Printer</button>
       </form>
     </section>
 
-    <section class="pane">
+    <section class="pane span-2">
       <h2>Queue <small id="queue-size"></small></h2>
       <div id="queue" class="list">Loading queue...</div>
+    </section>
 
-      <h3>Create Job</h3>
-      <form id="create-job-form">
-        <label>File reference <input name="fileReference" required placeholder="example.pdf or path/to/file"></label>
-        <label>Profile id (optional) <input name="profileId" placeholder="profile-1"></label>
-        <label>Priority <input name="priority" type="number" value="1" min="1" required></label>
-        <label>User ID <input name="userId" placeholder="username"></label>
-        <button type="submit">Create Job</button>
-      </form>
-
-      <h2>Jobs</h2>
+    <section class="pane span-2">
+      <h2>Latest Jobs</h2>
       <div id="jobs" class="list">Loading jobs...</div>
     </section>
   </main>
 
   <footer>
-    <small>Auto-refresh every 3s • Served from server/static/admin</small>
+    <small>Auto-refresh every 3s • /admin</small>
   </footer>
 
   <script src="/admin/app.js"></script>

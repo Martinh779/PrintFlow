@@ -5,9 +5,11 @@ import com.printflow.server.events.ServerEventLogger;
 import com.printflow.server.events.SystemEvent;
 import com.printflow.server.events.SystemEventType;
 import com.printflow.server.repository.PrintJobRepository;
+import com.printflow.server.service.PrintJobService;
 import com.printflow.server.socket.PrinterConnectionRegistry;
 import com.printflow.server.socket.PrinterSimulatorManager;
 import com.printflow.server.socket.TcpPrinterServer;
+import com.printflow.sharedmodel.dto.CreatePrintJobRequest;
 import com.printflow.sharedmodel.model.PrintJob;
 import com.printflow.sharedmodel.model.PrintJobStatus;
 import com.printflow.sharedmodel.model.PrinterProfile;
@@ -24,15 +26,18 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/admin")
 public class AdminController {
 
+    private static final long RECOVERY_STATE_WINDOW_SECONDS = 30;
+
     private final Dispatcher dispatcher;
     private final PrintJobRepository repository;
     private final TcpPrinterServer tcpPrinterServer;
     private final PrinterSimulatorManager simulatorManager;
     private final ServerEventLogger eventLogger;
     private final PrinterConnectionRegistry connectionRegistry;
+    private final PrintJobService printJobService;
 
     public AdminController(Dispatcher dispatcher, PrintJobRepository repository, TcpPrinterServer tcpPrinterServer, PrinterSimulatorManager simulatorManager) {
-        this(dispatcher, repository, tcpPrinterServer, simulatorManager, null, null);
+        this(dispatcher, repository, tcpPrinterServer, simulatorManager, null, null, null);
     }
 
     @Autowired
@@ -41,13 +46,24 @@ public class AdminController {
                            TcpPrinterServer tcpPrinterServer,
                            PrinterSimulatorManager simulatorManager,
                            ServerEventLogger eventLogger,
-                           PrinterConnectionRegistry connectionRegistry) {
+                           PrinterConnectionRegistry connectionRegistry,
+                           PrintJobService printJobService) {
         this.dispatcher = dispatcher;
         this.repository = repository;
         this.tcpPrinterServer = tcpPrinterServer;
         this.simulatorManager = simulatorManager;
         this.eventLogger = eventLogger;
         this.connectionRegistry = connectionRegistry;
+        this.printJobService = printJobService;
+    }
+
+    public AdminController(Dispatcher dispatcher,
+                           PrintJobRepository repository,
+                           TcpPrinterServer tcpPrinterServer,
+                           PrinterSimulatorManager simulatorManager,
+                           ServerEventLogger eventLogger,
+                           PrinterConnectionRegistry connectionRegistry) {
+        this(dispatcher, repository, tcpPrinterServer, simulatorManager, eventLogger, connectionRegistry, null);
     }
 
     @GetMapping("/health")
@@ -100,15 +116,13 @@ public class AdminController {
     public ResponseEntity<List<Map<String, Object>>> listPrinters() {
         List<SystemEvent> events = eventLogger == null ? List.of() : eventLogger.getEvents();
         Map<String, SystemEvent> latestEventByPrinter = latestEventByPrinter(events);
-        Set<String> recoveringPrinterIds = recoveringPrinterIds(events, Instant.now().minusSeconds(300));
         Map<String, Instant> lastSeenByPrinter = Optional.ofNullable(tcpPrinterServer.getPrinterLastSeenSnapshot()).orElseGet(Map::of);
 
         List<Map<String, Object>> printers = dispatcher.getRegisteredPrinters().stream()
                 .map(printer -> toPrinterResponse(
                         printer,
                         lastSeenByPrinter.get(printer.getId()),
-                        latestEventByPrinter.get(printer.getId()),
-                        recoveringPrinterIds.contains(printer.getId())
+                        latestEventByPrinter.get(printer.getId())
                 ))
                 .collect(Collectors.toList());
         return ResponseEntity.ok(printers);
@@ -116,8 +130,7 @@ public class AdminController {
 
     private Map<String, Object> toPrinterResponse(Dispatcher.PrinterRegistration printer,
                                                   Instant lastSeen,
-                                                  SystemEvent latestEvent,
-                                                  boolean recovering) {
+                                                  SystemEvent latestEvent) {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("id", printer.getId());
         response.put("name", printer.getName());
@@ -128,7 +141,7 @@ public class AdminController {
         response.put("connected", connected);
         response.put("lastSeenAt", lastSeen == null ? null : lastSeen.toString());
         response.put("activeAssignments", printer.getActiveAssignments());
-        response.put("recoveryState", determineRecoveryState(printer.isOnline(), connected, recovering));
+        response.put("recoveryState", determineRecoveryState(printer.isOnline(), connected, latestEvent));
         response.put("latestEvent", latestEvent == null ? null : Map.of(
                 "type", latestEvent.getType() == null ? null : latestEvent.getType().name(),
                 "message", latestEvent.getMessage(),
@@ -265,6 +278,57 @@ public class AdminController {
         return ResponseEntity.ok(jobs);
     }
 
+    public static class BulkCreateJobsRequest {
+        public Integer count;
+        public String filePrefix;
+        public String profileId;
+        public Integer priority;
+        public String userId;
+        public Integer startIndex;
+    }
+
+    @PostMapping("/jobs/bulk")
+    public ResponseEntity<?> createJobsBulk(@RequestBody BulkCreateJobsRequest req) {
+        if (printJobService == null) {
+            return ResponseEntity.status(503).body(Map.of("error", "PrintJobService unavailable"));
+        }
+        if (req == null || req.count == null || req.count <= 0) {
+            return ResponseEntity.badRequest().body(Map.of("error", "count must be a positive integer"));
+        }
+        if (req.count > 10_000) {
+            return ResponseEntity.badRequest().body(Map.of("error", "count must be <= 10000"));
+        }
+
+        String filePrefix = req.filePrefix == null || req.filePrefix.isBlank() ? "bulk-job" : req.filePrefix.trim();
+        String profileId = req.profileId == null ? "" : req.profileId.trim();
+        int priority = req.priority == null ? 1 : req.priority;
+        if (priority <= 0) {
+            return ResponseEntity.badRequest().body(Map.of("error", "priority must be positive"));
+        }
+        String userId = req.userId == null || req.userId.isBlank() ? "admin-bulk" : req.userId.trim();
+        int startIndex = req.startIndex == null ? 1 : Math.max(1, req.startIndex);
+
+        List<String> createdIds = new ArrayList<>(req.count);
+        for (int i = 0; i < req.count; i++) {
+            int jobNumber = startIndex + i;
+            String fileReference = filePrefix + "-" + jobNumber + ".pdf";
+            CreatePrintJobRequest request = new CreatePrintJobRequest(
+                    fileReference,
+                    toProfile(profileId),
+                    priority,
+                    userId
+            );
+            createdIds.add(printJobService.createJob(request).getId());
+        }
+
+        return ResponseEntity.status(201).body(Map.of(
+                "requested", req.count,
+                "created", createdIds.size(),
+                "firstJobId", createdIds.isEmpty() ? null : createdIds.getFirst(),
+                "lastJobId", createdIds.isEmpty() ? null : createdIds.getLast()
+        ));
+    }
+
     @GetMapping("/monitoring")
     public ResponseEntity<Map<String, Object>> monitoring() {
         List<PrintJob> jobs = repository.findAll();
@@ -349,24 +413,37 @@ public class AdminController {
                 ));
     }
 
-    private Set<String> recoveringPrinterIds(List<SystemEvent> events, Instant windowStart) {
-        return events.stream()
-                .filter(event -> event.getPrinterId() != null && !event.getPrinterId().isBlank())
-                .filter(event -> event.getCreatedAt() != null && !event.getCreatedAt().isBefore(windowStart))
-                .filter(event -> event.getType() == SystemEventType.RETRY_RECOVERY
-                        || event.getType() == SystemEventType.PRINTER_FAILED
-                        || event.getType() == SystemEventType.SOCKET_DISCONNECT)
-                .map(SystemEvent::getPrinterId)
-                .collect(Collectors.toSet());
-    }
-
-    private String determineRecoveryState(boolean online, boolean connected, boolean recovering) {
-        if (recovering) {
-            return "RECOVERING";
-        }
+    private String determineRecoveryState(boolean online, boolean connected, SystemEvent latestEvent) {
         if (!online || !connected) {
             return "DEGRADED";
         }
+        if (isRecentRecoveryEvent(latestEvent)) {
+            return "RECOVERING";
+        }
         return "STABLE";
+    }
+
+    private boolean isRecentRecoveryEvent(SystemEvent latestEvent) {
+        if (latestEvent == null || latestEvent.getType() == null || latestEvent.getCreatedAt() == null) {
+            return false;
+        }
+        boolean recoveryType = latestEvent.getType() == SystemEventType.RETRY_RECOVERY
+                || latestEvent.getType() == SystemEventType.PRINTER_FAILED
+                || latestEvent.getType() == SystemEventType.SOCKET_DISCONNECT;
+        if (!recoveryType) {
+            return false;
+        }
+        Instant recoveryThreshold = Instant.now().minusSeconds(RECOVERY_STATE_WINDOW_SECONDS);
+        return !latestEvent.getCreatedAt().isBefore(recoveryThreshold);
+    }
+
+    private PrinterProfile toProfile(String profileId) {
+        if (profileId == null || profileId.isBlank()) {
+            return new PrinterProfile();
+        }
+        PrinterProfile profile = new PrinterProfile();
+        profile.setId(profileId);
+        profile.setName(profileId);
+        return profile;
     }
 }

@@ -5,6 +5,8 @@ import com.printflow.server.events.ServerEventLogger;
 import com.printflow.server.events.SystemEvent;
 import com.printflow.server.events.SystemEventType;
 import com.printflow.server.repository.PrintJobRepository;
+import com.printflow.server.service.PrintJobService;
+import com.printflow.sharedmodel.dto.PrintJobResponse;
 import com.printflow.server.socket.PrinterConnectionRegistry;
 import com.printflow.server.socket.PrinterSimulatorManager;
 import com.printflow.server.socket.TcpPrinterServer;
@@ -21,6 +23,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -210,5 +213,117 @@ class AdminControllerTest {
         assertEquals(1L, jobHealth.get("COMPLETED"));
         assertEquals(1L, jobHealth.get("FAILED"));
         assertEquals(1L, jobHealth.get("QUEUED"));
+    }
+
+    @Test
+    void bulkCreateJobsCreatesRequestedAmount() {
+        Dispatcher dispatcher = mock(Dispatcher.class);
+        PrintJobRepository repository = mock(PrintJobRepository.class);
+        TcpPrinterServer tcpPrinterServer = mock(TcpPrinterServer.class);
+        PrinterSimulatorManager simulatorManager = mock(PrinterSimulatorManager.class);
+        PrintJobService printJobService = mock(PrintJobService.class);
+
+        when(printJobService.createJob(any())).thenAnswer(invocation -> {
+            String id = "job-" + System.nanoTime();
+            PrintJobResponse response = new PrintJobResponse();
+            response.setId(id);
+            return response;
+        });
+
+        AdminController controller = new AdminController(
+                dispatcher, repository, tcpPrinterServer, simulatorManager, null, null, printJobService
+        );
+        AdminController.BulkCreateJobsRequest request = new AdminController.BulkCreateJobsRequest();
+        request.count = 25;
+        request.filePrefix = "demo";
+        request.priority = 2;
+        request.profileId = "profile-a";
+        request.userId = "qa";
+
+        ResponseEntity<?> response = controller.createJobsBulk(request);
+
+        assertEquals(201, response.getStatusCode().value());
+        assertEquals(25, ((Map<String, Object>) response.getBody()).get("created"));
+        verify(printJobService, org.mockito.Mockito.times(25)).createJob(any());
+    }
+
+    @Test
+    void listPrintersUsesRecentEventsForRecoveringState() {
+        Dispatcher dispatcher = mock(Dispatcher.class);
+        PrintJobRepository repository = mock(PrintJobRepository.class);
+        TcpPrinterServer tcpPrinterServer = mock(TcpPrinterServer.class);
+        PrinterSimulatorManager simulatorManager = mock(PrinterSimulatorManager.class);
+        ServerEventLogger eventLogger = mock(ServerEventLogger.class);
+        PrinterConnectionRegistry connectionRegistry = mock(PrinterConnectionRegistry.class);
+
+        Dispatcher.PrinterRegistration printer = new Dispatcher.PrinterRegistration(
+                "printer-r1",
+                "Printer Recovery",
+                "localhost",
+                50000,
+                true,
+                List.of()
+        );
+
+        when(dispatcher.getRegisteredPrinters()).thenReturn(List.of(printer));
+        when(connectionRegistry.hasConnection("printer-r1")).thenReturn(true);
+        when(eventLogger.getEvents()).thenReturn(List.of(
+                new SystemEvent(
+                        SystemEventType.SOCKET_DISCONNECT,
+                        "Socket disconnect",
+                        null,
+                        "printer-r1",
+                        "transient disconnect",
+                        Map.of(),
+                        Instant.now().minusSeconds(10)
+                )
+        ));
+
+        AdminController controller = new AdminController(
+                dispatcher, repository, tcpPrinterServer, simulatorManager, eventLogger, connectionRegistry
+        );
+        ResponseEntity<List<Map<String, Object>>> response = controller.listPrinters();
+
+        assertEquals("RECOVERING", response.getBody().getFirst().get("recoveryState"));
+    }
+
+    @Test
+    void listPrintersDoesNotStayRecoveringForStaleEvents() {
+        Dispatcher dispatcher = mock(Dispatcher.class);
+        PrintJobRepository repository = mock(PrintJobRepository.class);
+        TcpPrinterServer tcpPrinterServer = mock(TcpPrinterServer.class);
+        PrinterSimulatorManager simulatorManager = mock(PrinterSimulatorManager.class);
+        ServerEventLogger eventLogger = mock(ServerEventLogger.class);
+        PrinterConnectionRegistry connectionRegistry = mock(PrinterConnectionRegistry.class);
+
+        Dispatcher.PrinterRegistration printer = new Dispatcher.PrinterRegistration(
+                "printer-r2",
+                "Printer Stable",
+                "localhost",
+                50000,
+                true,
+                List.of()
+        );
+
+        when(dispatcher.getRegisteredPrinters()).thenReturn(List.of(printer));
+        when(connectionRegistry.hasConnection("printer-r2")).thenReturn(true);
+        when(eventLogger.getEvents()).thenReturn(List.of(
+                new SystemEvent(
+                        SystemEventType.SOCKET_DISCONNECT,
+                        "Socket disconnect",
+                        null,
+                        "printer-r2",
+                        "older disconnect",
+                        Map.of(),
+                        Instant.now().minusSeconds(120)
+                )
+        ));
+
+        AdminController controller = new AdminController(
+                dispatcher, repository, tcpPrinterServer, simulatorManager, eventLogger, connectionRegistry
+        );
+        ResponseEntity<List<Map<String, Object>>> response = controller.listPrinters();
+
+        assertEquals("STABLE", response.getBody().getFirst().get("recoveryState"));
     }
 }
