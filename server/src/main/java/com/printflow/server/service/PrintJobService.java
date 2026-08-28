@@ -1,6 +1,7 @@
 package com.printflow.server.service;
 
 import com.printflow.server.dispatcher.Dispatcher;
+import com.printflow.server.events.ServerEventLogger;
 import com.printflow.server.exception.BadRequestException;
 import com.printflow.server.exception.InvalidJobStateException;
 import com.printflow.server.exception.ResourceNotFoundException;
@@ -24,11 +25,24 @@ public class PrintJobService {
     private final PrintJobRepository repository;
     private final Dispatcher dispatcher;
     private final org.springframework.context.ApplicationEventPublisher eventPublisher;
+    private final ServerEventLogger eventLogger;
+
+    public PrintJobService() {
+        this(null, null, null, new ServerEventLogger());
+    }
 
     public PrintJobService(PrintJobRepository repository, Dispatcher dispatcher, org.springframework.context.ApplicationEventPublisher eventPublisher) {
+        this(repository, dispatcher, eventPublisher, new ServerEventLogger());
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public PrintJobService(PrintJobRepository repository, Dispatcher dispatcher,
+                          org.springframework.context.ApplicationEventPublisher eventPublisher,
+                          ServerEventLogger eventLogger) {
         this.repository = repository;
         this.dispatcher = dispatcher;
         this.eventPublisher = eventPublisher;
+        this.eventLogger = eventLogger == null ? new ServerEventLogger() : eventLogger;
     }
 
     public PrintJobResponse createJob(CreatePrintJobRequest request) {
@@ -44,6 +58,8 @@ public class PrintJobService {
         job.transitionTo(PrintJobStatus.QUEUED);
         repository.save(job);
         dispatcher.enqueue(job);
+        eventLogger.recordJobCreated(job);
+        eventLogger.recordJobQueued(job);
         // notify listeners (e.g., TcpPrinterServer) that a job is enqueued so it can attempt dispatch
         eventPublisher.publishEvent(new JobEnqueuedEvent(job.getId()));
 
@@ -76,6 +92,7 @@ public class PrintJobService {
                         successful,
                         detail == null ? "Completed successfully" : detail
                 ));
+                eventLogger.recordJobCompleted(job, printerId, detail);
             }
             case "FEHLGESCHLAGEN", "FAILED" -> handlePrinterFailure(job, printerId, detail, durationMs);
             default -> { }
@@ -100,6 +117,8 @@ public class PrintJobService {
             if (job.getStatus() == PrintJobStatus.ASSIGNED || job.getStatus() == PrintJobStatus.PRINTING) {
                 job.setErrorMessage("Printer disconnected; job returned to queue for retry");
                 dispatcher.unassignJob(job);
+                eventLogger.recordRetryRecovery(job.getId(), printerId,
+                        "Printer disconnected; job returned to queue for retry");
                 eventPublisher.publishEvent(new JobEnqueuedEvent(job.getId()));
                 repository.save(job);
             }
@@ -113,6 +132,7 @@ public class PrintJobService {
 
         String errorMessage = detail == null || detail.isBlank() ? "Print failed" : detail;
         job.setErrorMessage(errorMessage);
+        eventLogger.recordPrinterFailure(job.getId(), printerId, errorMessage, durationMs);
 
         try {
             dispatcher.setPrinterOnline(printerId, false);
@@ -163,6 +183,7 @@ public class PrintJobService {
 
         job.cancel();
         dispatcher.cancelQueuedJob(id);
+        eventLogger.recordJobCancelled(id, "Job cancelled by user request");
         repository.save(job);
 
         return PrintJobResponse.from(job);

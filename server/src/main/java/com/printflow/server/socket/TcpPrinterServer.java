@@ -3,6 +3,7 @@ package com.printflow.server.socket;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.printflow.server.dispatcher.Dispatcher;
 import com.printflow.server.dispatcher.PrinterAssignment;
+import com.printflow.server.events.ServerEventLogger;
 import com.printflow.server.repository.PrintJobRepository;
 import com.printflow.server.service.PrintJobService;
 import com.printflow.sharedmodel.protocol.*;
@@ -31,6 +32,7 @@ public class TcpPrinterServer {
     private final PrintJobRepository repository;
     private final PrintJobService printJobService;
     private final com.printflow.server.socket.PrinterConnectionRegistry connectionRegistry;
+    private final ServerEventLogger eventLogger;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final Map<String, Socket> printerConnections = new ConcurrentHashMap<>();
     private final ExecutorService executor = Executors.newCachedThreadPool();
@@ -43,12 +45,14 @@ public class TcpPrinterServer {
             PrintJobRepository repository,
             PrintJobService printJobService,
             com.printflow.server.socket.PrinterConnectionRegistry connectionRegistry,
+            ServerEventLogger eventLogger,
             @Value("${printflow.socket.port:50000}") int port
     ) {
         this.dispatcher = dispatcher;
         this.repository = repository;
         this.printJobService = printJobService;
         this.connectionRegistry = connectionRegistry;
+        this.eventLogger = eventLogger == null ? new ServerEventLogger() : eventLogger;
         this.port = port;
     }
 
@@ -86,6 +90,7 @@ public class TcpPrinterServer {
 
     private void handlePrinterConnection(Socket socket) {
         String printerId = null;
+        boolean disconnectLogged = false;
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null) {
@@ -144,11 +149,16 @@ public class TcpPrinterServer {
         } catch (IOException e) {
             log.error("Error handling printer connection {}: {}", printerId, e.getMessage(), e);
             if (printerId != null) {
+                eventLogger.recordSocketDisconnect(printerId, "Printer socket closed unexpectedly: " + e.getMessage());
+                disconnectLogged = true;
                 printerConnections.remove(printerId);
                 if (connectionRegistry != null) connectionRegistry.removeConnection(printerId);
                 printJobService.recoverJobsForPrinter(printerId);
             }
         } finally {
+            if (printerId != null && !disconnectLogged) {
+                eventLogger.recordSocketDisconnect(printerId, "Printer connection closed");
+            }
             if (printerId != null) {
                 printerConnections.remove(printerId);
                 if (connectionRegistry != null) connectionRegistry.removeConnection(printerId);
@@ -270,6 +280,7 @@ public class TcpPrinterServer {
             } catch (IOException e) {
                 log.info("Outgoing printer connection {} closed: {}", printerId, e.getMessage());
             } finally {
+                eventLogger.recordSocketDisconnect(printerId, "Outgoing printer connection closed");
                 printerConnections.remove(printerId);
                 if (connectionRegistry != null) connectionRegistry.removeConnection(printerId);
                 printJobService.recoverJobsForPrinter(printerId);

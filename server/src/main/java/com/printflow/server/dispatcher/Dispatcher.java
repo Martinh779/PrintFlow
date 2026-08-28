@@ -1,5 +1,6 @@
 package com.printflow.server.dispatcher;
 
+import com.printflow.server.events.ServerEventLogger;
 import com.printflow.sharedmodel.model.PrintJob;
 import com.printflow.sharedmodel.model.PrintJobStatus;
 import org.slf4j.Logger;
@@ -21,18 +22,27 @@ public class Dispatcher {
     private final Queue<PrintJob> queue = new ConcurrentLinkedQueue<>();
     private final Map<String, PrinterRegistration> printers = new ConcurrentHashMap<>();
     private final com.printflow.server.socket.PrinterConnectionRegistry connectionRegistry;
+    private final ServerEventLogger eventLogger;
 
     public Dispatcher() {
-        this(new RoundRobinStrategy(), null);
+        this(new RoundRobinStrategy(), null, new ServerEventLogger());
     }
 
     public Dispatcher(DispatchStrategy strategy) {
-        this(strategy, null);
+        this(strategy, null, new ServerEventLogger());
     }
 
     public Dispatcher(DispatchStrategy strategy, com.printflow.server.socket.PrinterConnectionRegistry connectionRegistry) {
+        this(strategy, connectionRegistry, new ServerEventLogger());
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public Dispatcher(DispatchStrategy strategy,
+                      com.printflow.server.socket.PrinterConnectionRegistry connectionRegistry,
+                      ServerEventLogger eventLogger) {
         this.strategy = Objects.requireNonNull(strategy, "strategy must not be null");
         this.connectionRegistry = connectionRegistry;
+        this.eventLogger = eventLogger == null ? new ServerEventLogger() : eventLogger;
     }
 
         public static final class PrinterRegistration {
@@ -216,6 +226,7 @@ public class Dispatcher {
             job.setAssignedPrinterId(printer.getId());
 
             printer.incrementAssignments();
+            eventLogger.recordJobAssigned(job.getId(), printer.getId(), printer.getName());
             log.info("Assigned job {} to printer {}", job.getId(), printer.getId());
             return Optional.of(new PrinterAssignment(
                     job,
@@ -268,6 +279,8 @@ public class Dispatcher {
                 pr.decrementAssignments();
             }
         }
+        eventLogger.recordRetryRecovery(job.getId(), pid,
+                "Job returned to queue for retry after reassignment");
         queue.offer(job);
     }
 
