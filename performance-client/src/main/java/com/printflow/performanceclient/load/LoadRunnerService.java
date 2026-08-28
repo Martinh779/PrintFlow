@@ -62,6 +62,7 @@ public class LoadRunnerService {
                 "totalRequests", profile.getTotalRequests()
         ));
         report.put("scenarios", scenarioReports);
+        report.put("nfaEvaluation", NfaBenchmarkEvaluator.evaluate(profile.getRequestsPerSecond(), scenarioReports));
 
         String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(report);
         System.out.println(json);
@@ -105,8 +106,10 @@ public class LoadRunnerService {
         Map<String, Object> scenario = new LinkedHashMap<>();
         scenario.put("printerCount", printerCount);
         scenario.put("profile", profileName);
+        scenario.put("requestsPerSecond", requestsPerSecond);
         scenario.put("submittedRequests", totalRequests);
         scenario.put("acceptedRequests", submission.successCount);
+        scenario.put("uniqueAcceptedJobIds", submission.uniqueAcceptedJobIds);
         scenario.put("submissionErrors", submission.errorCount);
         scenario.put("requestSuccessRatePercent", round2(requestSuccessRate));
         scenario.put("submissionThroughputReqPerSec", round2(acceptedThroughput));
@@ -185,7 +188,8 @@ public class LoadRunnerService {
         }
 
         long elapsedMs = elapsedMs(scenarioStart);
-        return new SubmissionMetrics(successCount, errorCount, elapsedMs, latenciesMs, createdJobIds);
+        int uniqueAcceptedJobIds = new HashSet<>(createdJobIds).size();
+        return new SubmissionMetrics(successCount, uniqueAcceptedJobIds, errorCount, elapsedMs, latenciesMs, createdJobIds);
     }
 
     private CompletionMetrics waitForTerminalStates(List<String> jobIds) {
@@ -398,6 +402,7 @@ public class LoadRunnerService {
 
     private record SubmissionMetrics(
             int successCount,
+            int uniqueAcceptedJobIds,
             int errorCount,
             long elapsedMs,
             List<Long> latencySamplesMs,
