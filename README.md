@@ -2,7 +2,7 @@
 
 PrintFlow is a distributed print job manager built around a Spring Boot REST service, a thread-safe dispatcher, and TCP-based printer processes.
 
-Current project status: milestone 6 completed
+Current project status: milestone 8 completed — runbook, configuration reference, and project-readiness documentation added
 
 ## Scope
 - REST API for creating, listing, fetching, cancelling and reporting jobs
@@ -17,6 +17,12 @@ Current project status: milestone 6 completed
 - `printer-process` – simulated printer client that connects to the server
 - `performance-client` – load generation and throughput metrics
 - `shared-model` – shared domain model, status machine and protocol DTOs
+
+## Runbook and project readiness
+
+Operational guidance, configuration notes, benchmark execution, and current project risks are documented in:
+
+- `docs/runbook-and-project-readiness.md`
 
 ## Build and test
 ```bash
@@ -35,6 +41,18 @@ Start a simulated printer:
 ```
 
 The server listens on the configured socket port and accepts printer registrations via TCP.
+
+Admin cockpit is available at:
+
+```text
+http://localhost:8081/admin
+```
+
+Bulk test jobs can be created via:
+
+```text
+POST /api/admin/jobs/bulk
+```
 
 ## Dispatch strategy configuration
 
