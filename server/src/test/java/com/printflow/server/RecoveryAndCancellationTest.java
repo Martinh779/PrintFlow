@@ -60,10 +60,15 @@ class RecoveryAndCancellationTest {
         repository.save(job);
 
         printJobService.recoverJobsForPrinter("broken-printer");
+        printJobService.recoverJobsForPrinter("broken-printer");
 
         PrintJob recovered = repository.findById(job.getId()).orElseThrow();
         assertEquals(PrintJobStatus.QUEUED, recovered.getStatus());
         assertNull(recovered.getAssignedPrinterId());
-        assertTrue(dispatcher.getQueueSnapshot().stream().anyMatch(item -> job.getId().equals(item.getId())));
+        long queuedCopies = dispatcher.getQueueSnapshot().stream()
+                .filter(item -> job.getId().equals(item.getId()))
+                .count();
+        assertEquals(1, queuedCopies, "Recovered job should only be queued once");
+        assertEquals("Printer disconnected; job returned to queue for retry", recovered.getErrorMessage());
     }
 }
