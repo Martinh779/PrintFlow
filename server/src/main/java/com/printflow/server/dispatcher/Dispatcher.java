@@ -204,7 +204,7 @@ public class Dispatcher {
 
         PrinterRegistration existing = printers.get(printer.getId());
         if (existing != null) {
-            existing.setOnline(existing.isOnline() && printer.isOnline());
+            existing.setOnline(printer.isOnline());
             log.info("Printer registration refreshed for {} (online={})", printer.getId(), existing.isOnline());
             return;
         }

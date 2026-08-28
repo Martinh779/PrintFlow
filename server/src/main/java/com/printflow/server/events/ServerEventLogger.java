@@ -81,22 +81,22 @@ public class ServerEventLogger {
         if (job == null) {
             return;
         }
-        record(SystemEventType.JOB_CREATED, job.getId(), null, "Job created", Map.of(
-                "fileReference", job.getFileReference(),
-                "profileId", job.getProfile() == null ? null : job.getProfile().getId(),
-                "priority", job.getPriority(),
-                "userId", job.getUserId()
-        ));
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("fileReference", job.getFileReference());
+        details.put("profileId", job.getProfile() == null ? null : job.getProfile().getId());
+        details.put("priority", job.getPriority());
+        details.put("userId", job.getUserId());
+        record(SystemEventType.JOB_CREATED, job.getId(), null, "Job created", details);
     }
 
     public void recordJobQueued(PrintJob job) {
         if (job == null) {
             return;
         }
-        record(SystemEventType.JOB_QUEUED, job.getId(), null, "Job queued for processing", Map.of(
-                "status", job.getStatus(),
-                "queuedAt", job.getQueuedAt() == null ? Instant.now() : job.getQueuedAt()
-        ));
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("status", job.getStatus());
+        details.put("queuedAt", job.getQueuedAt() == null ? Instant.now() : job.getQueuedAt());
+        record(SystemEventType.JOB_QUEUED, job.getId(), null, "Job queued for processing", details);
     }
 
     public void recordJobAssigned(String jobId, String printerId, String printerName) {
@@ -108,9 +108,10 @@ public class ServerEventLogger {
         if (job == null) {
             return;
         }
-        record(SystemEventType.JOB_COMPLETED, job.getId(), printerId, "Job completed",
-                Map.of("detail", detail == null ? "Completed successfully" : detail,
-                        "status", job.getStatus()));
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("detail", detail == null ? "Completed successfully" : detail);
+        details.put("status", job.getStatus());
+        record(SystemEventType.JOB_COMPLETED, job.getId(), printerId, "Job completed", details);
     }
 
     public void recordJobCancelled(String jobId, String reason) {

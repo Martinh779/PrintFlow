@@ -6,6 +6,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 import java.util.Arrays;
 
@@ -44,6 +45,7 @@ public class PrinterProcessApplication {
     }
 
     @Bean
+    @ConditionalOnProperty(name = "printer.process.runner.enabled", havingValue = "true", matchIfMissing = true)
     CommandLineRunner startup() {
         return args -> {
             System.out.println("Printer Process Started");

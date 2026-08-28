@@ -85,4 +85,29 @@ class ServerEventLoggingTest {
                 .anyMatch(event -> event.getType() == SystemEventType.JOB_CANCELLED
                         && cancelled.getId().equals(event.getJobId())));
     }
+
+    @Test
+    void createJobLogsEventEvenWhenProfileIdIsMissing() throws Exception {
+        Path tempDir = Files.createTempDirectory("printflow-event-log-null-profile");
+        Path eventPath = tempDir.resolve("events.json");
+        Path jobPath = tempDir.resolve("jobs.json");
+
+        ServerEventLogger eventLogger = new ServerEventLogger(eventPath);
+        Dispatcher dispatcher = new Dispatcher(new RoundRobinStrategy(), null, eventLogger);
+        PrintJobRepository repository = new PrintJobRepository(jobPath);
+        ApplicationEventPublisher publisher = event -> { };
+        PrintJobService service = new PrintJobService(repository, dispatcher, publisher, eventLogger);
+
+        CreatePrintJobRequest request = new CreatePrintJobRequest(
+                "bulk-null-profile.pdf",
+                new PrinterProfile(),
+                1,
+                "bulk-user"
+        );
+
+        PrintJobResponse created = service.createJob(request);
+        assertNotNull(created.getId());
+        assertEquals(1, eventLogger.countByType(SystemEventType.JOB_CREATED));
+        assertEquals(1, eventLogger.countByType(SystemEventType.JOB_QUEUED));
+    }
 }

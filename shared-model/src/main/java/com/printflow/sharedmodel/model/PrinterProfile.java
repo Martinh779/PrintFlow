@@ -26,4 +26,12 @@ public class PrinterProfile {
         this.colorMode = colorMode;
         this.duplexSupported = Boolean.TRUE.equals(duplexSupported);
     }
+
+    public PrinterProfile(String id,
+                          String name,
+                          String paperSize,
+                          String colorMode,
+                          boolean duplexSupported) {
+        this(id, name, paperSize, colorMode, Boolean.valueOf(duplexSupported));
+    }
 }

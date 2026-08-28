@@ -150,4 +150,15 @@ class DispatcherTest {
 
         assertEquals("printer-exact", selectedPrinter);
     }
+
+    @Test
+    void reRegisterPrinterCanSetOnlineBackToTrue() {
+        Dispatcher dispatcher = new Dispatcher(new RoundRobinStrategy());
+        dispatcher.registerPrinter("printer-1", "Printer 1", false);
+        assertFalse(dispatcher.getRegisteredPrinters().getFirst().isOnline());
+
+        dispatcher.registerPrinter("printer-1", "Printer 1", true);
+
+        assertTrue(dispatcher.getRegisteredPrinters().getFirst().isOnline());
+    }
 }
