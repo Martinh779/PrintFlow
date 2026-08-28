@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 public class TcpPrinterClient {
@@ -30,12 +31,17 @@ public class TcpPrinterClient {
 
     // reconnect interval in ms
     private final long reconnectIntervalMs;
+    private final long heartbeatIntervalMs;
 
     public TcpPrinterClient(String serverHost, int serverPort, String printerId, String printerName, int capacity, List<PrinterProfile> supportedProfiles) {
-        this(serverHost, serverPort, printerId, printerName, capacity, supportedProfiles, 2000);
+        this(serverHost, serverPort, printerId, printerName, capacity, supportedProfiles, 2000, 3000);
     }
 
     public TcpPrinterClient(String serverHost, int serverPort, String printerId, String printerName, int capacity, List<PrinterProfile> supportedProfiles, long reconnectIntervalMs) {
+        this(serverHost, serverPort, printerId, printerName, capacity, supportedProfiles, reconnectIntervalMs, 3000);
+    }
+
+    public TcpPrinterClient(String serverHost, int serverPort, String printerId, String printerName, int capacity, List<PrinterProfile> supportedProfiles, long reconnectIntervalMs, long heartbeatIntervalMs) {
         this.serverHost = serverHost;
         this.serverPort = serverPort;
         this.printerId = printerId;
@@ -43,6 +49,7 @@ public class TcpPrinterClient {
         this.capacity = capacity <= 0 ? 1 : capacity;
         this.supportedProfiles = supportedProfiles == null ? List.of() : supportedProfiles;
         this.reconnectIntervalMs = reconnectIntervalMs;
+        this.heartbeatIntervalMs = heartbeatIntervalMs <= 0 ? 3000 : heartbeatIntervalMs;
     }
 
     public void connect() {
@@ -58,25 +65,31 @@ public class TcpPrinterClient {
                     // Register with supported profiles and capacity info
                     RegisterPrinterMessage register = new RegisterPrinterMessage(printerId, printerName, serverHost, serverPort, true, supportedProfiles);
                     writer.println(register.toJson());
+                    ScheduledExecutorService heartbeatExecutor = Executors.newSingleThreadScheduledExecutor();
+                    heartbeatExecutor.scheduleAtFixedRate(() -> sendHeartbeat(writer), heartbeatIntervalMs, heartbeatIntervalMs, TimeUnit.MILLISECONDS);
 
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        if (line.isBlank()) {
-                            continue;
+                    try {
+                        String line;
+                        while ((line = reader.readLine()) != null) {
+                            if (line.isBlank()) {
+                                continue;
+                            }
+                            SocketMessage message = SocketMessage.fromJson(line);
+                            if (message == null) continue;
+                            if ("PRINT_JOB".equalsIgnoreCase(message.getType())) {
+                                PrintJobMessage printJobMessage = SocketMessage.OBJECT_MAPPER.readValue(line, PrintJobMessage.class);
+                                // Submit simulation to thread pool so multiple jobs can be processed concurrently
+                                pool.submit(() -> {
+                                    try {
+                                        simulatePrint(printJobMessage, writer);
+                                    } catch (IOException e) {
+                                        log.error("Failed to send status update: {}", e.getMessage());
+                                    }
+                                });
+                            }
                         }
-                        SocketMessage message = SocketMessage.fromJson(line);
-                        if (message == null) continue;
-                        if ("PRINT_JOB".equalsIgnoreCase(message.getType())) {
-                            PrintJobMessage printJobMessage = SocketMessage.OBJECT_MAPPER.readValue(line, PrintJobMessage.class);
-                            // Submit simulation to thread pool so multiple jobs can be processed concurrently
-                            pool.submit(() -> {
-                                try {
-                                    simulatePrint(printJobMessage, writer);
-                                } catch (IOException e) {
-                                    log.error("Failed to send status update: {}", e.getMessage());
-                                }
-                            });
-                        }
+                    } finally {
+                        heartbeatExecutor.shutdownNow();
                     }
 
                     log.info("Connection closed by server {}:{}", serverHost, serverPort);
@@ -100,6 +113,18 @@ public class TcpPrinterClient {
             } catch (InterruptedException ignored) {
                 Thread.currentThread().interrupt();
             }
+        }
+    }
+
+    private void sendHeartbeat(PrintWriter writer) {
+        try {
+            SocketMessage heartbeat = new SocketMessage("HEARTBEAT");
+            heartbeat.setPrinterId(printerId);
+            synchronized (writer) {
+                writer.println(heartbeat.toJson());
+            }
+        } catch (Exception e) {
+            log.debug("Failed to send heartbeat for printer {}: {}", printerId, e.getMessage());
         }
     }
 

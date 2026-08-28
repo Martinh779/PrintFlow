@@ -22,5 +22,9 @@ logging:
     console: "%d{yyyy-MM-dd HH:mm:ss} %-5level %logger{36} - %msg%n"
 
 printflow:
+  socket:
+    read-timeout-ms: 15000
+    heartbeat-timeout-ms: 15000
+    heartbeat-check-interval-ms: 3000
   dispatch:
     strategy: round-robin

@@ -24,6 +24,9 @@ public class PrinterProcessApplication {
     @Value("${printer.capacity:2}")
     private int printerCapacity;
 
+    @Value("${printer.heartbeat.interval-ms:3000}")
+    private long heartbeatIntervalMs;
+
     @Value("${printer.supportedProfiles:}")
     private String supportedProfilesCsv;
 
@@ -60,7 +63,16 @@ public class PrinterProcessApplication {
                 }
             }
 
-            TcpPrinterClient client = new TcpPrinterClient(serverHost, serverPort, printerId, "Printer " + printerId, printerCapacity, profiles);
+            TcpPrinterClient client = new TcpPrinterClient(
+                    serverHost,
+                    serverPort,
+                    printerId,
+                    "Printer " + printerId,
+                    printerCapacity,
+                    profiles,
+                    2000,
+                    heartbeatIntervalMs
+            );
             client.connect();
         };
     }

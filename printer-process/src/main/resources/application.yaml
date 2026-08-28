@@ -1,3 +1,7 @@
 spring:
   application:
     name: printer-process
+
+printer:
+  heartbeat:
+    interval-ms: 3000

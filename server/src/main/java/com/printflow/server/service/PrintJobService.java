@@ -84,6 +84,7 @@ public class PrintJobService {
                 if (job.getStatus() != PrintJobStatus.COMPLETED) {
                     job.transitionTo(PrintJobStatus.COMPLETED);
                 }
+                dispatcher.completeAssignment(job);
                 job.setAssignedPrinterId(printerId);
                 job.setResult(new PrintResult(
                         printerId,
@@ -116,9 +117,7 @@ public class PrintJobService {
             }
             if (job.getStatus() == PrintJobStatus.ASSIGNED || job.getStatus() == PrintJobStatus.PRINTING) {
                 job.setErrorMessage("Printer disconnected; job returned to queue for retry");
-                dispatcher.unassignJob(job);
-                eventLogger.recordRetryRecovery(job.getId(), printerId,
-                        "Printer disconnected; job returned to queue for retry");
+                dispatcher.unassignJob(job, "Printer disconnected; job returned to queue for retry");
                 eventPublisher.publishEvent(new JobEnqueuedEvent(job.getId()));
                 repository.save(job);
             }
@@ -141,12 +140,13 @@ public class PrintJobService {
         }
 
         if (job.getStatus() == PrintJobStatus.ASSIGNED || job.getStatus() == PrintJobStatus.PRINTING) {
-            dispatcher.unassignJob(job);
+            dispatcher.unassignJob(job, "Printer failure; job returned to queue for retry");
             eventPublisher.publishEvent(new JobEnqueuedEvent(job.getId()));
             return;
         }
 
         job.transitionTo(PrintJobStatus.FAILED);
+        dispatcher.completeAssignment(job);
         job.setAssignedPrinterId(printerId);
         job.setResult(new PrintResult(
                 printerId,
@@ -182,6 +182,7 @@ public class PrintJobService {
         }
 
         job.cancel();
+        dispatcher.completeAssignment(job);
         dispatcher.cancelQueuedJob(id);
         eventLogger.recordJobCancelled(id, "Job cancelled by user request");
         repository.save(job);
