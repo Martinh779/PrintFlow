@@ -1,12 +1,17 @@
 package com.printflow.performanceclient;
 
+import com.printflow.performanceclient.config.PerformanceClientProperties;
+import com.printflow.performanceclient.load.LoadRunnerService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.http.*;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 import java.io.BufferedReader;
@@ -15,6 +20,7 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 @SpringBootApplication
+@EnableConfigurationProperties(PerformanceClientProperties.class)
 public class PerformanceClientApplication {
 
     @Value("${printflow.server.base-url:http://localhost:8081}")
@@ -23,9 +29,11 @@ public class PerformanceClientApplication {
     public static void main(String[] args) {
         boolean interactive = Arrays.asList(args).contains("--interactive") ||
                 Boolean.parseBoolean(System.getProperty("printflow.client.interactive", "false"));
+        boolean loadRunner = Arrays.asList(args).contains("--load-runner") ||
+                "load-runner".equalsIgnoreCase(System.getProperty("printflow.client.mode", ""));
 
         SpringApplication app = new SpringApplication(PerformanceClientApplication.class);
-        if (interactive) {
+        if (interactive || loadRunner) {
             app.setWebApplicationType(WebApplicationType.NONE);
         }
         app.run(args);
@@ -37,86 +45,114 @@ public class PerformanceClientApplication {
     }
 
     @Bean
-    public CommandLineRunner healthCheck(RestTemplate restTemplate) {
-        return args -> {
-            String healthUrl = serverBaseUrl + "/actuator/health";
-            long start = System.nanoTime();
-
-            try {
-                String response = restTemplate.getForObject(healthUrl, String.class);
-                long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
-
-                System.out.println("Health-Check to " + healthUrl);
-                System.out.println("Answer: " + response);
-                System.out.println("Runtime: " + elapsedMs + " ms");
-            } catch (Exception ex) {
-                long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
-                System.out.println("Health-Check failed to " + healthUrl + " after " + elapsedMs + " ms");
-                System.out.println("Error: " + ex.getMessage());
-            }
-        };
+    public ObjectMapper objectMapper() {
+        return new ObjectMapper();
     }
 
     @Bean
-    public CommandLineRunner interactiveCli(RestTemplate restTemplate) {
+    public CommandLineRunner commandLineRunner(
+            RestTemplate restTemplate,
+            LoadRunnerService loadRunnerService,
+            PerformanceClientProperties properties
+    ) {
         return args -> {
-            boolean interactive = Arrays.asList(args).contains("--interactive") ||
-                    Boolean.parseBoolean(System.getProperty("printflow.client.interactive", "false"));
-            if (!interactive) return;
-
-            BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
-            System.out.println("PrintFlow Interactive Client");
-            String menu = "\nChoose action:\n1) Create Job\n2) Get Job by ID\n3) List Jobs (optionally by user)\n4) Cancel Job\n5) Get Result\n6) Exit\n7) Create example job\n> ";
-
-            while (true) {
-                System.out.print(menu);
-                String line = reader.readLine();
-                if (line == null) break;
-                line = line.trim();
-                try {
-                    switch (line) {
-                        case "1":
-                            createJobInteractive(restTemplate, reader);
-                            break;
-                        case "2":
-                            System.out.print("Job ID: ");
-                            String id = reader.readLine().trim();
-                            String getUrl = serverBaseUrl + "/api/jobs/" + id;
-                            System.out.println("Response: " + restTemplate.getForObject(getUrl, String.class));
-                            break;
-                        case "3":
-                            System.out.print("User ID (leave empty to list all): ");
-                            String user = reader.readLine().trim();
-                            String listUrl = serverBaseUrl + "/api/jobs" + (user.isEmpty() ? "" : "?userId=" + user);
-                            System.out.println("Response: " + restTemplate.getForObject(listUrl, String.class));
-                            break;
-                        case "4":
-                            System.out.print("Job ID to cancel: ");
-                            String cancelId = reader.readLine().trim();
-                            String cancelUrl = serverBaseUrl + "/api/jobs/" + cancelId;
-                            ResponseEntity<String> resp = restTemplate.exchange(cancelUrl, HttpMethod.DELETE, null, String.class);
-                            System.out.println("Cancel response: " + resp.getBody());
-                            break;
-                        case "5":
-                            System.out.print("Job ID for result: ");
-                            String resId = reader.readLine().trim();
-                            String resUrl = serverBaseUrl + "/api/jobs/" + resId + "/result";
-                            System.out.println("Response: " + restTemplate.getForObject(resUrl, String.class));
-                            break;
-                        case "6":
-                            System.out.println("Exiting interactive client.");
-                            return;
-                        case "7":
-                            createExampleJob(restTemplate);
-                            break;
-                        default:
-                            System.out.println("Unknown option");
-                    }
-                } catch (Exception ex) {
-                    System.out.println("Error during request: " + ex.getMessage());
-                }
+            if (isInteractive(args, properties)) {
+                runInteractive(restTemplate);
+                return;
             }
+
+            if (isLoadRunner(args, properties)) {
+                loadRunnerService.execute(args);
+                return;
+            }
+
+            runHealthCheck(restTemplate);
         };
+    }
+
+    private boolean isInteractive(String[] args, PerformanceClientProperties properties) {
+        return Arrays.asList(args).contains("--interactive") ||
+                Boolean.parseBoolean(System.getProperty("printflow.client.interactive", "false")) ||
+                "interactive".equalsIgnoreCase(properties.getMode());
+    }
+
+    private boolean isLoadRunner(String[] args, PerformanceClientProperties properties) {
+        return Arrays.asList(args).contains("--load-runner") ||
+                "load-runner".equalsIgnoreCase(System.getProperty("printflow.client.mode", "")) ||
+                "load-runner".equalsIgnoreCase(properties.getMode());
+    }
+
+    private void runHealthCheck(RestTemplate restTemplate) {
+        String healthUrl = serverBaseUrl + "/actuator/health";
+        long start = System.nanoTime();
+
+        try {
+            String response = restTemplate.getForObject(healthUrl, String.class);
+            long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+
+            System.out.println("Health-Check to " + healthUrl);
+            System.out.println("Answer: " + response);
+            System.out.println("Runtime: " + elapsedMs + " ms");
+        } catch (RestClientException ex) {
+            long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+            System.out.println("Health-Check failed to " + healthUrl + " after " + elapsedMs + " ms");
+            System.out.println("Error: " + ex.getMessage());
+        }
+    }
+
+    private void runInteractive(RestTemplate restTemplate) throws Exception {
+        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+        System.out.println("PrintFlow Interactive Client");
+        String menu = "\nChoose action:\n1) Create Job\n2) Get Job by ID\n3) List Jobs (optionally by user)\n4) Cancel Job\n5) Get Result\n6) Exit\n7) Create example job\n> ";
+
+        while (true) {
+            System.out.print(menu);
+            String line = reader.readLine();
+            if (line == null) break;
+            line = line.trim();
+            try {
+                switch (line) {
+                    case "1":
+                        createJobInteractive(restTemplate, reader);
+                        break;
+                    case "2":
+                        System.out.print("Job ID: ");
+                        String id = reader.readLine().trim();
+                        String getUrl = serverBaseUrl + "/api/jobs/" + id;
+                        System.out.println("Response: " + restTemplate.getForObject(getUrl, String.class));
+                        break;
+                    case "3":
+                        System.out.print("User ID (leave empty to list all): ");
+                        String user = reader.readLine().trim();
+                        String listUrl = serverBaseUrl + "/api/jobs" + (user.isEmpty() ? "" : "?userId=" + user);
+                        System.out.println("Response: " + restTemplate.getForObject(listUrl, String.class));
+                        break;
+                    case "4":
+                        System.out.print("Job ID to cancel: ");
+                        String cancelId = reader.readLine().trim();
+                        String cancelUrl = serverBaseUrl + "/api/jobs/" + cancelId;
+                        ResponseEntity<String> resp = restTemplate.exchange(cancelUrl, HttpMethod.DELETE, null, String.class);
+                        System.out.println("Cancel response: " + resp.getBody());
+                        break;
+                    case "5":
+                        System.out.print("Job ID for result: ");
+                        String resId = reader.readLine().trim();
+                        String resUrl = serverBaseUrl + "/api/jobs/" + resId + "/result";
+                        System.out.println("Response: " + restTemplate.getForObject(resUrl, String.class));
+                        break;
+                    case "6":
+                        System.out.println("Exiting interactive client.");
+                        return;
+                    case "7":
+                        createExampleJob(restTemplate);
+                        break;
+                    default:
+                        System.out.println("Unknown option");
+                }
+            } catch (RestClientException ex) {
+                System.out.println("Error during request: " + ex.getMessage());
+            }
+        }
     }
 
     private void createJobInteractive(RestTemplate restTemplate, BufferedReader reader) throws Exception {
@@ -183,9 +219,8 @@ public class PerformanceClientApplication {
         try {
             ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
             System.out.println("Example create response: " + response.getStatusCode() + " - " + response.getBody());
-        } catch (Exception ex) {
+        } catch (RestClientException ex) {
             System.out.println("Failed to create example job: " + ex.getMessage());
         }
     }
 }
-

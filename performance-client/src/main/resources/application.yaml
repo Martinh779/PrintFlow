@@ -5,3 +5,25 @@ spring:
 printflow:
   server:
     base-url: http://localhost:8081
+  client:
+    mode: health-check
+    load:
+      profile: steady
+      printer-scenarios:
+        - 1
+        - 2
+        - 4
+      completion-timeout-seconds: 240
+      status-poll-interval-ms: 500
+      simulator-stabilization-ms: 1500
+      output-file: performance-client\target\load-runner-report.json
+      profiles:
+        steady:
+          requests-per-second: 5
+          total-requests: 50
+        burst:
+          requests-per-second: 20
+          total-requests: 120
+        stress:
+          requests-per-second: 40
+          total-requests: 240
