@@ -169,7 +169,7 @@ public class AdminController {
 
         String name = req.name == null ? req.id : req.name;
         List<PrinterProfile> profiles = toSupportedProfiles(req.supportedProfiles);
-        boolean online = req.online == null ? false : req.online;
+        boolean online = req.online != null && req.online;
 
         Dispatcher.PrinterRegistration registration = new Dispatcher.PrinterRegistration(req.id, name, "localhost", 0, online, profiles);
         dispatcher.registerPrinter(registration);

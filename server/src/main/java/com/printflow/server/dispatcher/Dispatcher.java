@@ -1,11 +1,13 @@
 package com.printflow.server.dispatcher;
 
 import com.printflow.server.events.ServerEventLogger;
+import com.printflow.server.socket.PrinterConnectionRegistry;
 import com.printflow.sharedmodel.model.PrintJob;
 import com.printflow.sharedmodel.model.PrintJobStatus;
 import com.printflow.sharedmodel.model.PrinterProfile;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -26,7 +28,7 @@ public class Dispatcher {
     private final Set<String> queuedJobIds = ConcurrentHashMap.newKeySet();
     private final Set<String> inFlightJobIds = ConcurrentHashMap.newKeySet();
     private final Map<String, PrinterRegistration> printers = new ConcurrentHashMap<>();
-    private final com.printflow.server.socket.PrinterConnectionRegistry connectionRegistry;
+    private final PrinterConnectionRegistry connectionRegistry;
     private final ServerEventLogger eventLogger;
 
     public Dispatcher() {
@@ -37,22 +39,22 @@ public class Dispatcher {
         this(strategy, null, new ServerEventLogger());
     }
 
-    public Dispatcher(DispatchStrategy strategy, com.printflow.server.socket.PrinterConnectionRegistry connectionRegistry) {
+    public Dispatcher(DispatchStrategy strategy, PrinterConnectionRegistry connectionRegistry) {
         this(strategy, connectionRegistry, new ServerEventLogger());
     }
 
-    public Dispatcher(String strategyKey, com.printflow.server.socket.PrinterConnectionRegistry connectionRegistry) {
+    public Dispatcher(String strategyKey, PrinterConnectionRegistry connectionRegistry) {
         this(strategyKey, connectionRegistry, new ServerEventLogger());
     }
 
     public Dispatcher(String strategyKey,
-                      com.printflow.server.socket.PrinterConnectionRegistry connectionRegistry,
+                      PrinterConnectionRegistry connectionRegistry,
                       ServerEventLogger eventLogger) {
         this(resolveRequestedStrategyType(strategyKey), connectionRegistry, eventLogger);
     }
 
     private Dispatcher(DispatchStrategyType defaultStrategyType,
-                       com.printflow.server.socket.PrinterConnectionRegistry connectionRegistry,
+                       PrinterConnectionRegistry connectionRegistry,
                        ServerEventLogger eventLogger) {
         this.defaultStrategyType = Objects.requireNonNull(defaultStrategyType, "defaultStrategyType must not be null");
         this.activeStrategyType = this.defaultStrategyType;
@@ -61,9 +63,9 @@ public class Dispatcher {
         this.availableStrategies = createDefaultStrategyMap();
     }
 
-    @org.springframework.beans.factory.annotation.Autowired
+    @Autowired
     public Dispatcher(DispatchStrategy strategy,
-                      com.printflow.server.socket.PrinterConnectionRegistry connectionRegistry,
+                      PrinterConnectionRegistry connectionRegistry,
                       ServerEventLogger eventLogger) {
         DispatchStrategyType strategyType = resolveStrategyType(strategy);
         this.defaultStrategyType = strategyType;
@@ -132,7 +134,7 @@ public class Dispatcher {
             private final int port;
             private volatile boolean online;
             private final AtomicInteger activeAssignments = new AtomicInteger();
-            private final java.util.List<com.printflow.sharedmodel.model.PrinterProfile> supportedProfiles;
+            private final java.util.List<PrinterProfile> supportedProfiles;
 
             public PrinterRegistration(String id, String name) {
                 this(id, name, "localhost", 0, true, java.util.List.of());
@@ -146,7 +148,7 @@ public class Dispatcher {
                 this(id, name, host, port, online, java.util.List.of());
             }
 
-            public PrinterRegistration(String id, String name, String host, int port, boolean online, java.util.List<com.printflow.sharedmodel.model.PrinterProfile> supportedProfiles) {
+            public PrinterRegistration(String id, String name, String host, int port, boolean online, List<PrinterProfile> supportedProfiles) {
                 this.id = Objects.requireNonNull(id, "printer id must not be null");
                 this.name = Objects.requireNonNull(name, "printer name must not be null");
                 this.host = host == null ? "localhost" : host;
@@ -178,7 +180,7 @@ public class Dispatcher {
                 return activeAssignments.get();
         }
 
-            public java.util.List<com.printflow.sharedmodel.model.PrinterProfile> getSupportedProfiles() {
+            public List<PrinterProfile> getSupportedProfiles() {
                 return supportedProfiles;
             }
 

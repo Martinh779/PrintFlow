@@ -99,7 +99,7 @@ public class LoadRunnerService {
 
         double submissionSeconds = Math.max(0.001, submission.elapsedMs / 1000.0);
         double totalRuntimeSeconds = Math.max(0.001, (submission.elapsedMs + completion.elapsedMs) / 1000.0);
-        double requestSuccessRate = totalRequests == 0 ? 0 : (submission.successCount * 100.0) / totalRequests;
+        double requestSuccessRate = submission.successCount * 100.0 / totalRequests;
         double completedThroughput = completion.terminalCount / totalRuntimeSeconds;
         double acceptedThroughput = submission.successCount / submissionSeconds;
 

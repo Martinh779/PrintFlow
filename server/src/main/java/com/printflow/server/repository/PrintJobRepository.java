@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.printflow.sharedmodel.model.PrintJob;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Repository;
 
@@ -42,7 +43,7 @@ public class PrintJobRepository {
         load();
     }
 
-    @org.springframework.beans.factory.annotation.Autowired
+    @Autowired
     public PrintJobRepository(@Value("${printflow.storage.jobs.file:data/printflow-jobs.json}") String storagePath) {
         this(createDefaultObjectMapper(), Path.of(storagePath));
     }

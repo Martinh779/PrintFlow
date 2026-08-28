@@ -17,8 +17,8 @@ public final class LatencyCalculator {
         List<Long> sorted = new ArrayList<>(samplesMs);
         Collections.sort(sorted);
 
-        long min = sorted.get(0);
-        long max = sorted.get(sorted.size() - 1);
+        long min = sorted.getFirst();
+        long max = sorted.getLast();
         double avg = sorted.stream().mapToLong(Long::longValue).average().orElse(0.0);
         long p50 = percentile(sorted, 0.50);
         long p95 = percentile(sorted, 0.95);
@@ -27,7 +27,7 @@ public final class LatencyCalculator {
 
     private static long percentile(List<Long> sorted, double percentile) {
         int index = (int) Math.ceil(percentile * sorted.size()) - 1;
-        int boundedIndex = Math.min(Math.max(index, 0), sorted.size() - 1);
+        int boundedIndex = Math.clamp(index, 0, sorted.size() - 1);
         return sorted.get(boundedIndex);
     }
 }

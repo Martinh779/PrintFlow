@@ -91,13 +91,11 @@ public class TcpPrinterClient {
                     } finally {
                         heartbeatExecutor.shutdownNow();
                     }
-
                     log.info("Connection closed by server {}:{}", serverHost, serverPort);
                 } catch (IOException e) {
                     log.warn("Printer client could not connect to {}:{} - {}", serverHost, serverPort, e.getMessage());
                 }
 
-                // sleep before retrying
                 try {
                     log.info("Reconnecting to {}:{} in {} ms", serverHost, serverPort, reconnectIntervalMs);
                     TimeUnit.MILLISECONDS.sleep(reconnectIntervalMs);

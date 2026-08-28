@@ -52,7 +52,7 @@ public class ApiExceptionHandler {
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiErrorResponse> handleUnreadableBody(HttpMessageNotReadableException ex) {
         Throwable cause = ex.getMostSpecificCause();
-        log.warn("400 malformed request body: {}", cause == null ? ex.getMessage() : cause.getMessage());
+        log.warn("400 malformed request body: {}", cause.getMessage());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(new ApiErrorResponse(400, "VALIDATION_ERROR", "Malformed request body", Instant.now()));
     }
