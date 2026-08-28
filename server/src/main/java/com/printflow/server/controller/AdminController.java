@@ -35,7 +35,43 @@ public class AdminController {
         m.put("time", Instant.now().toString());
         m.put("queueSize", dispatcher.queueSize());
         m.put("registeredPrinters", dispatcher.getRegisteredPrinters().size());
+        m.put("dispatchStrategy", dispatcher.getDispatchStrategy());
         return ResponseEntity.ok(m);
+    }
+
+    public static class UpdateDispatchPolicyRequest {
+        public String strategy;
+    }
+
+    @GetMapping("/dispatch-policy")
+    public ResponseEntity<Map<String, Object>> getDispatchPolicy() {
+        return ResponseEntity.ok(toDispatchPolicyResponse());
+    }
+
+    @PutMapping("/dispatch-policy")
+    public ResponseEntity<?> updateDispatchPolicy(@RequestBody UpdateDispatchPolicyRequest req) {
+        if (req == null || req.strategy == null || req.strategy.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "strategy is required"));
+        }
+
+        try {
+            dispatcher.setDispatchStrategy(req.strategy);
+            return ResponseEntity.ok(toDispatchPolicyResponse());
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
+    }
+
+    private Map<String, Object> toDispatchPolicyResponse() {
+        Map<String, Object> policy = new LinkedHashMap<>();
+        policy.put("strategy", dispatcher.getDispatchStrategy());
+        policy.put("defaultStrategy", dispatcher.getDefaultDispatchStrategy());
+        policy.put("availableStrategies", dispatcher.getAvailableDispatchStrategies());
+        policy.put("printerPolicy", Map.of(
+                "profileMatching", "Requested profile id must match printer-supported profile id; empty profile list behaves as wildcard",
+                "priorityHandling", "priority-aware strategy uses job priority thresholds (>=7 high, >=4 medium, else low)"
+        ));
+        return policy;
     }
 
     @GetMapping("/printers")

@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -104,5 +105,55 @@ class AdminControllerTest {
         assertEquals(200, response.getStatusCode().value());
         assertEquals(Boolean.TRUE, ((Map<String, Object>) response.getBody()).get("connected"));
         verify(tcpPrinterServer).connectToPrinter(eq("printer-2"), eq("Printer Two"), eq("127.0.0.1"), eq(60000), eq(true), anyList());
+    }
+
+    @Test
+    void getDispatchPolicyReturnsCurrentAndAvailableStrategies() {
+        Dispatcher dispatcher = mock(Dispatcher.class);
+        PrintJobRepository repository = mock(PrintJobRepository.class);
+        TcpPrinterServer tcpPrinterServer = mock(TcpPrinterServer.class);
+        PrinterSimulatorManager simulatorManager = mock(PrinterSimulatorManager.class);
+
+        when(dispatcher.getDispatchStrategy()).thenReturn("least-loaded");
+        when(dispatcher.getDefaultDispatchStrategy()).thenReturn("round-robin");
+        when(dispatcher.getAvailableDispatchStrategies()).thenReturn(List.of(
+                Map.of("key", "round-robin", "label", "Round Robin"),
+                Map.of("key", "least-loaded", "label", "Least Loaded"),
+                Map.of("key", "priority-aware", "label", "Priority Aware")
+        ));
+
+        AdminController controller = new AdminController(dispatcher, repository, tcpPrinterServer, simulatorManager);
+        ResponseEntity<Map<String, Object>> response = controller.getDispatchPolicy();
+
+        assertEquals(200, response.getStatusCode().value());
+        assertEquals("least-loaded", response.getBody().get("strategy"));
+        assertEquals("round-robin", response.getBody().get("defaultStrategy"));
+        assertNotNull(response.getBody().get("availableStrategies"));
+        assertNotNull(response.getBody().get("printerPolicy"));
+    }
+
+    @Test
+    void updateDispatchPolicyAppliesRequestedStrategy() {
+        Dispatcher dispatcher = mock(Dispatcher.class);
+        PrintJobRepository repository = mock(PrintJobRepository.class);
+        TcpPrinterServer tcpPrinterServer = mock(TcpPrinterServer.class);
+        PrinterSimulatorManager simulatorManager = mock(PrinterSimulatorManager.class);
+
+        when(dispatcher.getDispatchStrategy()).thenReturn("priority-aware");
+        when(dispatcher.getDefaultDispatchStrategy()).thenReturn("round-robin");
+        when(dispatcher.getAvailableDispatchStrategies()).thenReturn(List.of(
+                Map.of("key", "round-robin", "label", "Round Robin"),
+                Map.of("key", "least-loaded", "label", "Least Loaded"),
+                Map.of("key", "priority-aware", "label", "Priority Aware")
+        ));
+
+        AdminController controller = new AdminController(dispatcher, repository, tcpPrinterServer, simulatorManager);
+        AdminController.UpdateDispatchPolicyRequest request = new AdminController.UpdateDispatchPolicyRequest();
+        request.strategy = "priority-aware";
+
+        ResponseEntity<?> response = controller.updateDispatchPolicy(request);
+
+        assertEquals(200, response.getStatusCode().value());
+        verify(dispatcher).setDispatchStrategy("priority-aware");
     }
 }

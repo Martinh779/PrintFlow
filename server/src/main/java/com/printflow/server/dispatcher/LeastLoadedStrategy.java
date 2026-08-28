@@ -1,6 +1,7 @@
 package com.printflow.server.dispatcher;
 
 import com.printflow.sharedmodel.model.PrintJob;
+import com.printflow.sharedmodel.model.PrinterProfile;
 
 import java.util.Comparator;
 import java.util.List;
@@ -15,10 +16,11 @@ public class LeastLoadedStrategy implements DispatchStrategy {
             return Optional.empty();
         }
 
+        PrinterProfile requestedProfile = job == null ? null : job.getProfile();
         return printers.stream()
                 .filter(Objects::nonNull)
                 .filter(Dispatcher.PrinterRegistration::isOnline)
-                .filter(p -> p.supportsProfile(job.getProfile()))
+                .filter(p -> p.supportsProfile(requestedProfile))
                 .min(Comparator.comparingInt(Dispatcher.PrinterRegistration::getActiveAssignments));
     }
 }

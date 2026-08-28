@@ -1,6 +1,7 @@
 package com.printflow.server.dispatcher;
 
 import com.printflow.sharedmodel.model.PrintJob;
+import com.printflow.sharedmodel.model.PrinterProfile;
 
 import java.util.List;
 import java.util.Optional;
@@ -19,9 +20,10 @@ public class RoundRobinStrategy implements DispatchStrategy {
             return Optional.empty();
         }
 
+        PrinterProfile requestedProfile = job == null ? null : job.getProfile();
         List<Dispatcher.PrinterRegistration> activePrinters = printers.stream()
                 .filter(Dispatcher.PrinterRegistration::isOnline)
-                .filter(p -> p.supportsProfile(job.getProfile()))
+                .filter(p -> p.supportsProfile(requestedProfile))
                 .toList();
 
         if (activePrinters.isEmpty()) {

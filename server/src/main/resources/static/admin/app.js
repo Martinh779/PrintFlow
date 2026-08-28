@@ -2,6 +2,7 @@ const API = {
   health: '/api/admin/health',
   printers: '/api/admin/printers',
   queue: '/api/admin/queue',
+  dispatchPolicy: '/api/admin/dispatch-policy',
   jobs: '/api/jobs'
 };
 
@@ -15,17 +16,19 @@ function el(tag, cls) { const e = document.createElement(tag); if (cls) e.classN
 
 async function refresh() {
   try {
-    const [health, printers, queue, jobs] = await Promise.all([
+    const [health, printers, queue, jobs, dispatchPolicy] = await Promise.all([
       fetchJson(API.health),
       fetchJson(API.printers),
       fetchJson(API.queue),
-      fetchJson(API.jobs)
+      fetchJson(API.jobs),
+      fetchJson(API.dispatchPolicy)
     ]);
 
     document.getElementById('health').textContent = `${health.status} @ ${new Date(health.time).toLocaleTimeString()}`;
     document.getElementById('printer-count').textContent = `(${printers.length})`;
     document.getElementById('queue-size').textContent = `(${health.queueSize})`;
 
+    renderDispatchPolicy(dispatchPolicy);
     renderPrinters(printers);
     renderQueue(queue);
     renderJobs(jobs);
@@ -33,6 +36,31 @@ async function refresh() {
     document.getElementById('health').textContent = `ERROR: ${e.message}`;
     console.error(e);
   }
+}
+
+function renderDispatchPolicy(policy) {
+  const current = document.getElementById('dispatch-policy-current');
+  const printerPolicy = document.getElementById('dispatch-policy-printer-policy');
+  const select = document.getElementById('dispatch-strategy-select');
+  if (!current || !printerPolicy || !select) return;
+
+  const strategy = policy.strategy || '-';
+  const defaultStrategy = policy.defaultStrategy || '-';
+  current.textContent = `Current: ${strategy} • Default: ${defaultStrategy}`;
+
+  const available = Array.isArray(policy.availableStrategies) ? policy.availableStrategies : [];
+  const selectedBefore = select.value;
+  select.innerHTML = '';
+  available.forEach(entry => {
+    const option = el('option');
+    option.value = entry.key;
+    option.textContent = `${entry.label} (${entry.key})`;
+    select.appendChild(option);
+  });
+  select.value = available.some(s => s.key === selectedBefore) ? selectedBefore : strategy;
+
+  const pp = policy.printerPolicy || {};
+  printerPolicy.textContent = `Profile policy: ${pp.profileMatching || '-'} • Priority policy: ${pp.priorityHandling || '-'}`;
 }
 
 function renderPrinters(printers) {
@@ -206,6 +234,25 @@ if (createJobForm) createJobForm.addEventListener('submit', async e => {
     e.target.reset();
     await refresh();
   } catch (err) { alert('Create job failed: ' + err.message); }
+});
+
+const dispatchPolicyForm = document.getElementById('dispatch-policy-form');
+if (dispatchPolicyForm) dispatchPolicyForm.addEventListener('submit', async e => {
+  e.preventDefault();
+  const data = new FormData(e.target);
+  const strategy = (data.get('strategy') || '').toString().trim();
+  if (!strategy) return alert('strategy required');
+  try {
+    const res = await fetch(API.dispatchPolicy, {
+      method: 'PUT',
+      body: JSON.stringify({ strategy }),
+      headers: { 'Content-Type': 'application/json' }
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    await refresh();
+  } catch (err) {
+    alert('Dispatch policy update failed: ' + err.message);
+  }
 });
 
 // initial load + interval

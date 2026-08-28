@@ -14,6 +14,18 @@
 
   <main>
     <section class="pane">
+      <h2>Dispatch Policy</h2>
+      <div id="dispatch-policy-current" class="muted">Loading policy...</div>
+      <form id="dispatch-policy-form">
+        <label>Strategy
+          <select id="dispatch-strategy-select" name="strategy"></select>
+        </label>
+        <button type="submit">Apply Strategy</button>
+      </form>
+      <div id="dispatch-policy-printer-policy" class="muted"></div>
+    </section>
+
+    <section class="pane">
       <h2>Printers <small id="printer-count"></small></h2>
       <div id="printers" class="list">Loading printers...</div>
 

@@ -20,3 +20,7 @@ logging:
     com.printflow.server: DEBUG
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} %-5level %logger{36} - %msg%n"
+
+printflow:
+  dispatch:
+    strategy: round-robin

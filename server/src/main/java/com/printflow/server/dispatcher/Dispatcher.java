@@ -3,6 +3,7 @@ package com.printflow.server.dispatcher;
 import com.printflow.server.events.ServerEventLogger;
 import com.printflow.sharedmodel.model.PrintJob;
 import com.printflow.sharedmodel.model.PrintJobStatus;
+import com.printflow.sharedmodel.model.PrinterProfile;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -18,14 +19,16 @@ public class Dispatcher {
 
     private static final Logger log = LoggerFactory.getLogger(Dispatcher.class);
 
-    private final DispatchStrategy strategy;
+    private final EnumMap<DispatchStrategyType, DispatchStrategy> availableStrategies;
+    private final DispatchStrategyType defaultStrategyType;
+    private volatile DispatchStrategyType activeStrategyType;
     private final Queue<PrintJob> queue = new ConcurrentLinkedQueue<>();
     private final Map<String, PrinterRegistration> printers = new ConcurrentHashMap<>();
     private final com.printflow.server.socket.PrinterConnectionRegistry connectionRegistry;
     private final ServerEventLogger eventLogger;
 
     public Dispatcher() {
-        this(new RoundRobinStrategy(), null, new ServerEventLogger());
+        this(DispatchStrategyType.ROUND_ROBIN, null, new ServerEventLogger());
     }
 
     public Dispatcher(DispatchStrategy strategy) {
@@ -36,13 +39,88 @@ public class Dispatcher {
         this(strategy, connectionRegistry, new ServerEventLogger());
     }
 
+    public Dispatcher(String strategyKey, com.printflow.server.socket.PrinterConnectionRegistry connectionRegistry) {
+        this(strategyKey, connectionRegistry, new ServerEventLogger());
+    }
+
+    public Dispatcher(String strategyKey,
+                      com.printflow.server.socket.PrinterConnectionRegistry connectionRegistry,
+                      ServerEventLogger eventLogger) {
+        this(resolveRequestedStrategyType(strategyKey), connectionRegistry, eventLogger);
+    }
+
+    private Dispatcher(DispatchStrategyType defaultStrategyType,
+                       com.printflow.server.socket.PrinterConnectionRegistry connectionRegistry,
+                       ServerEventLogger eventLogger) {
+        this.defaultStrategyType = Objects.requireNonNull(defaultStrategyType, "defaultStrategyType must not be null");
+        this.activeStrategyType = this.defaultStrategyType;
+        this.connectionRegistry = connectionRegistry;
+        this.eventLogger = eventLogger == null ? new ServerEventLogger() : eventLogger;
+        this.availableStrategies = createDefaultStrategyMap();
+    }
+
     @org.springframework.beans.factory.annotation.Autowired
     public Dispatcher(DispatchStrategy strategy,
                       com.printflow.server.socket.PrinterConnectionRegistry connectionRegistry,
                       ServerEventLogger eventLogger) {
-        this.strategy = Objects.requireNonNull(strategy, "strategy must not be null");
+        DispatchStrategyType strategyType = resolveStrategyType(strategy);
+        this.defaultStrategyType = strategyType;
+        this.activeStrategyType = strategyType;
         this.connectionRegistry = connectionRegistry;
         this.eventLogger = eventLogger == null ? new ServerEventLogger() : eventLogger;
+        this.availableStrategies = createDefaultStrategyMap();
+        this.availableStrategies.put(strategyType, strategy);
+    }
+
+    private static EnumMap<DispatchStrategyType, DispatchStrategy> createDefaultStrategyMap() {
+        EnumMap<DispatchStrategyType, DispatchStrategy> strategyMap = new EnumMap<>(DispatchStrategyType.class);
+        strategyMap.put(DispatchStrategyType.ROUND_ROBIN, new RoundRobinStrategy());
+        strategyMap.put(DispatchStrategyType.LEAST_LOADED, new LeastLoadedStrategy());
+        strategyMap.put(DispatchStrategyType.PRIORITY_AWARE, new PriorityAwareStrategy());
+        return strategyMap;
+    }
+
+    private static DispatchStrategyType resolveStrategyType(DispatchStrategy strategy) {
+        Objects.requireNonNull(strategy, "strategy must not be null");
+        if (strategy instanceof LeastLoadedStrategy) {
+            return DispatchStrategyType.LEAST_LOADED;
+        }
+        if (strategy instanceof PriorityAwareStrategy) {
+            return DispatchStrategyType.PRIORITY_AWARE;
+        }
+        return DispatchStrategyType.ROUND_ROBIN;
+    }
+
+    private static DispatchStrategyType resolveRequestedStrategyType(String strategyKey) {
+        return DispatchStrategyType.fromValue(strategyKey).orElse(DispatchStrategyType.ROUND_ROBIN);
+    }
+
+    private DispatchStrategy activeStrategy() {
+        return availableStrategies.getOrDefault(activeStrategyType, availableStrategies.get(defaultStrategyType));
+    }
+
+    public synchronized void setDispatchStrategy(String strategyKey) {
+        DispatchStrategyType resolved = DispatchStrategyType.fromValue(strategyKey)
+                .orElseThrow(() -> new IllegalArgumentException("Unknown dispatch strategy: " + strategyKey));
+        this.activeStrategyType = resolved;
+        log.info("Dispatch strategy changed to {}", resolved.value());
+    }
+
+    public String getDispatchStrategy() {
+        return activeStrategyType.value();
+    }
+
+    public String getDefaultDispatchStrategy() {
+        return defaultStrategyType.value();
+    }
+
+    public List<Map<String, String>> getAvailableDispatchStrategies() {
+        return Arrays.stream(DispatchStrategyType.values())
+                .map(strategyType -> Map.of(
+                        "key", strategyType.value(),
+                        "label", strategyType.label()
+                ))
+                .toList();
     }
 
         public static final class PrinterRegistration {
@@ -102,10 +180,18 @@ public class Dispatcher {
                 return supportedProfiles;
             }
 
-            public boolean supportsProfile(com.printflow.sharedmodel.model.PrinterProfile profile) {
-                if (profile == null || profile.getId() == null) return true; // treat null as wildcard
-                if (supportedProfiles == null || supportedProfiles.isEmpty()) return true; // no restriction
-                return supportedProfiles.stream().anyMatch(p -> profile.getId().equals(p.getId()));
+            public int profileMatchSpecificity(PrinterProfile profile) {
+                if (profile == null || profile.getId() == null || profile.getId().isBlank()) {
+                    return 1;
+                }
+                if (supportedProfiles == null || supportedProfiles.isEmpty()) {
+                    return 1;
+                }
+                return supportedProfiles.stream().anyMatch(p -> profile.getId().equals(p.getId())) ? 0 : Integer.MAX_VALUE;
+            }
+
+            public boolean supportsProfile(PrinterProfile profile) {
+                return profileMatchSpecificity(profile) != Integer.MAX_VALUE;
             }
         }
 
@@ -207,7 +293,7 @@ public class Dispatcher {
             return Optional.empty();
         }
 
-        Optional<PrinterRegistration> selected = strategy.select(candidates, job);
+        Optional<PrinterRegistration> selected = activeStrategy().select(candidates, job);
         if (selected.isEmpty()) {
             log.debug("No suitable printer selected for job {}, requeueing", job.getId());
             queue.offer(job);

@@ -98,4 +98,56 @@ class DispatcherTest {
         assertEquals(100, assignedIds.size());
         assertEquals(0, dispatcher.queueSize());
     }
+
+    @Test
+    void dispatcherCanSwitchStrategiesAtRuntime() {
+        Dispatcher dispatcher = new Dispatcher("round-robin", null);
+        assertEquals("round-robin", dispatcher.getDispatchStrategy());
+        assertEquals("round-robin", dispatcher.getDefaultDispatchStrategy());
+
+        dispatcher.setDispatchStrategy("least-loaded");
+        assertEquals("least-loaded", dispatcher.getDispatchStrategy());
+
+        dispatcher.setDispatchStrategy("priority-aware");
+        assertEquals("priority-aware", dispatcher.getDispatchStrategy());
+    }
+
+    @Test
+    void priorityAwareStrategyPrefersProfileMatchForHighPriorityJob() {
+        PriorityAwareStrategy strategy = new PriorityAwareStrategy();
+
+        Dispatcher.PrinterRegistration wildcardPrinter = new Dispatcher.PrinterRegistration(
+                "printer-any",
+                "Printer Any",
+                "localhost",
+                0,
+                true,
+                List.of()
+        );
+        wildcardPrinter.incrementAssignments();
+        wildcardPrinter.incrementAssignments();
+
+        Dispatcher.PrinterRegistration exactMatchPrinter = new Dispatcher.PrinterRegistration(
+                "printer-exact",
+                "Printer Exact",
+                "localhost",
+                0,
+                true,
+                List.of(new PrinterProfile("profile-a4", "A4", "A4", "BW", true))
+        );
+        exactMatchPrinter.incrementAssignments();
+
+        PrintJob urgentJob = new PrintJob(
+                "job-prio",
+                "urgent.pdf",
+                new PrinterProfile("profile-a4", "A4", "A4", "BW", true),
+                9
+        );
+
+        String selectedPrinter = strategy.select(List.of(wildcardPrinter, exactMatchPrinter), urgentJob)
+                .orElseThrow()
+                .getId();
+
+        assertEquals("printer-exact", selectedPrinter);
+    }
 }
