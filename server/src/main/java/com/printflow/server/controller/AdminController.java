@@ -260,6 +260,37 @@ public class AdminController {
         return ResponseEntity.status(404).body(Map.of("error", "no active outgoing connection for printer"));
     }
 
+    @DeleteMapping("/printers/{id}")
+    @PostMapping("/printers/{id}/remove")
+    public ResponseEntity<?> removePrinter(@PathVariable String id) {
+        try {
+            boolean disconnected = tcpPrinterServer.disconnectPrinter(id);
+            dispatcher.unregisterPrinter(id);
+            if (connectionRegistry != null) {
+                connectionRegistry.removeConnection(id);
+            }
+            if (simulatorManager != null) {
+                simulatorManager.stopSimulator(id);
+            }
+            return ResponseEntity.ok(Map.of(
+                    "id", id,
+                    "disconnected", disconnected,
+                    "removed", true
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/logs/wipe")
+    public ResponseEntity<?> wipeLogs() {
+        if (eventLogger == null) {
+            return ResponseEntity.status(503).body(Map.of("error", "event logger unavailable"));
+        }
+        eventLogger.clear();
+        return ResponseEntity.ok(Map.of("status", "cleared", "eventCount", 0));
+    }
+
     @PostMapping("/printers/{id}/online")
     public ResponseEntity<?> setPrinterOnline(@PathVariable String id, @RequestParam boolean online) {
         try {

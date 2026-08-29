@@ -152,6 +152,11 @@ public class ServerEventLogger {
         return events.stream().filter(event -> type == event.getType()).count();
     }
 
+    public void clear() {
+        events.clear();
+        persist();
+    }
+
     private void load() {
         if (Files.notExists(storagePath)) {
             return;

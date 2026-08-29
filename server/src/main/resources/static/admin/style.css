@@ -90,6 +90,10 @@ button {
   font-weight: 600;
 }
 button:hover { background: #094fcb; }
+.danger-button {
+  background: #c0392b;
+}
+.danger-button:hover { background: #a72820; }
 
 .printer {
   border: 1px solid #d9e3f2;

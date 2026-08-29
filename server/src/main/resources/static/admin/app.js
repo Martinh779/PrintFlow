@@ -5,7 +5,8 @@ const API = {
   dispatchPolicy: '/api/admin/dispatch-policy',
   monitoring: '/api/admin/monitoring',
   bulkJobs: '/api/admin/jobs/bulk',
-  jobs: '/api/jobs'
+  jobs: '/api/jobs',
+  wipeLogs: '/api/admin/logs/wipe'
 };
 
 async function fetchJson(url, opts) {
@@ -152,6 +153,24 @@ function renderPrinters(printers) {
       }
     };
     actions.appendChild(simBtn);
+
+    const removeBtn = el('button');
+    removeBtn.textContent = 'Remove Printer';
+    removeBtn.className = 'danger-button';
+    removeBtn.onclick = async () => {
+      if (!window.confirm(`Remove printer ${printer.id}? This disconnects it and deletes its registration.`)) {
+        return;
+      }
+      try {
+        const res = await fetch(`${API.printers}/${encodeURIComponent(printer.id)}/remove`, { method: 'POST' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        showNotice(`Printer ${printer.id} removed`);
+        await refresh();
+      } catch (err) {
+        showNotice(`Remove printer failed: ${err.message}`, true);
+      }
+    };
+    actions.appendChild(removeBtn);
 
     card.appendChild(actions);
     container.appendChild(card);
@@ -334,6 +353,23 @@ function registerHandlers() {
     bulkCreateForm.addEventListener('submit', async (event) => {
       event.preventDefault();
       await createBulkJobs(event.target);
+    });
+  }
+
+  const wipeLogsBtn = document.getElementById('wipe-logs-button');
+  if (wipeLogsBtn) {
+    wipeLogsBtn.addEventListener('click', async () => {
+      if (!window.confirm('Clear all recorded server logs/events?')) {
+        return;
+      }
+      try {
+        const res = await fetch(API.wipeLogs, { method: 'POST' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        showNotice('Server event log cleared');
+        await refresh();
+      } catch (err) {
+        showNotice(`Wipe logs failed: ${err.message}`, true);
+      }
     });
   }
 
