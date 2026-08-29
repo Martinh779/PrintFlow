@@ -44,7 +44,7 @@ async function refresh() {
     ]);
 
     document.getElementById('health').textContent =
-      `${health.status} • ${new Date(health.time).toLocaleTimeString()} • strategy=${health.dispatchStrategy}`;
+      `${health.status} | ${new Date(health.time).toLocaleTimeString()} | strategy=${health.dispatchStrategy}`;
     document.getElementById('printer-count').textContent = `(${printers.length})`;
     document.getElementById('queue-size').textContent = `(${health.queueSize})`;
 
@@ -67,7 +67,7 @@ function renderDispatchPolicy(policy) {
 
   const strategy = policy.strategy || '-';
   const defaultStrategy = policy.defaultStrategy || '-';
-  current.textContent = `Current: ${strategy} • Default: ${defaultStrategy}`;
+  current.textContent = `Current: ${strategy} | Default: ${defaultStrategy}`;
 
   const available = Array.isArray(policy.availableStrategies) ? policy.availableStrategies : [];
   const selectedBefore = select.value;
@@ -82,7 +82,7 @@ function renderDispatchPolicy(policy) {
 
   const pp = policy.printerPolicy || {};
   printerPolicy.textContent =
-    `Profile policy: ${pp.profileMatching || '-'} • Priority policy: ${pp.priorityHandling || '-'}`;
+    `Profile policy: ${pp.profileMatching || '-'} | Priority policy: ${pp.priorityHandling || '-'}`;
 }
 
 function renderPrinters(printers) {
@@ -107,13 +107,13 @@ function renderPrinters(printers) {
     const lastSeen = printer.lastSeenAt ? new Date(printer.lastSeenAt).toLocaleTimeString() : '-';
     const info = el('div', 'muted');
     info.innerHTML =
-      `${printer.host || 'localhost'}:${printer.port || 0} • online=${printer.online} • connected=${printer.connected} • active=${printer.activeAssignments} • simulator=${printer.simulatorRunning ? 'yes' : 'no'}<br><span class="${stateClass}">recovery=${printer.recoveryState || '-'}</span> • lastSeen=${lastSeen}`;
+      `${printer.host || 'localhost'}:${printer.port || 0} | online=${printer.online} | connected=${printer.connected} | active=${printer.activeAssignments} | simulator=${printer.simulatorRunning ? 'yes' : 'no'}<br><span class="${stateClass}">recovery=${printer.recoveryState || '-'}</span> | lastSeen=${lastSeen}`;
     card.appendChild(info);
 
     if (printer.latestEvent) {
       const latest = el('div', 'muted');
       latest.textContent =
-        `Latest event: ${printer.latestEvent.type || '-'} • ${printer.latestEvent.message || '-'} • ${printer.latestEvent.createdAt ? new Date(printer.latestEvent.createdAt).toLocaleTimeString() : '-'}`;
+        `Latest event: ${printer.latestEvent.type || '-'} | ${printer.latestEvent.message || '-'} | ${printer.latestEvent.createdAt ? new Date(printer.latestEvent.createdAt).toLocaleTimeString() : '-'}`;
       card.appendChild(latest);
     }
 
@@ -187,7 +187,7 @@ function renderQueue(queue) {
   queue.forEach((job) => {
     const row = el('div', 'job-row');
     row.textContent =
-      `${job.id} • ${job.fileReference} • priority=${job.priority} • user=${job.userId || '-'} • status=${job.status}`;
+      `${job.id} | ${job.fileReference} | priority=${job.priority} | user=${job.userId || '-'} | status=${job.status}`;
     container.appendChild(row);
   });
 }
@@ -202,9 +202,9 @@ function renderJobs(jobs) {
 
   jobs.slice().reverse().slice(0, 80).forEach((job) => {
     const row = el('div', 'job-row');
-    const errorPart = job.errorMessage ? ` • error=${job.errorMessage}` : '';
+    const errorPart = job.errorMessage ? ` | error=${job.errorMessage}` : '';
     row.innerHTML =
-      `<strong>${job.id}</strong> • ${job.fileReference} • ${job.status} • user=${job.userId || '-'}${errorPart}<br><small class="muted">created=${new Date(job.createdAt).toLocaleString()} assignedPrinter=${job.assignedPrinterId || '-'}</small>`;
+      `<strong>${job.id}</strong> | ${job.fileReference} | ${job.status} | user=${job.userId || '-'}${errorPart}<br><small class="muted">created=${new Date(job.createdAt).toLocaleString()} | assignedPrinter=${job.assignedPrinterId || '-'}</small>`;
     container.appendChild(row);
   });
 }
@@ -216,11 +216,11 @@ function renderMonitoring(monitoring) {
   const health = monitoring && monitoring.jobHealth ? monitoring.jobHealth : {};
 
   document.getElementById('monitoring-throughput').textContent =
-    `${throughput.completedPerMinute || 0}/min • ${throughput.completedLast5Min || 0} in last 5m`;
+    `${throughput.completedPerMinute || 0}/min | ${throughput.completedLast5Min || 0} in last 5m`;
   document.getElementById('monitoring-errors').textContent =
-    `failed-rate=${errors.failedTerminalRatePercent || 0}% • printer-failures=${errors.printerFailuresLast15Min || 0} • disconnects=${errors.disconnectsLast15Min || 0}`;
+    `failed-rate=${errors.failedTerminalRatePercent || 0}% | printer-failures=${errors.printerFailuresLast15Min || 0} | disconnects=${errors.disconnectsLast15Min || 0}`;
   document.getElementById('monitoring-recovery').textContent =
-    `retries=${recovery.recoveriesLast15Min || 0} • queued-for-retry=${recovery.currentlyQueuedForRetry || 0}`;
+    `retries=${recovery.recoveriesLast15Min || 0} | queued-for-retry=${recovery.currentlyQueuedForRetry || 0}`;
 
   const healthContainer = document.getElementById('monitoring-job-health');
   healthContainer.innerHTML = '';

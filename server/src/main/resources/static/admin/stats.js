@@ -56,7 +56,7 @@ async function refresh() {
     ]);
 
     document.getElementById('health').textContent =
-      `${health.status} • ${new Date(health.time).toLocaleTimeString()} • strategy=${health.dispatchStrategy}`;
+      `${health.status} | ${new Date(health.time).toLocaleTimeString()} | strategy=${health.dispatchStrategy}`;
 
     renderSummary(nfaStats);
     renderAllNfas(nfaStats);
@@ -77,6 +77,7 @@ function renderSummary(stats) {
   document.getElementById('summary-time').textContent = stats.computedAt
     ? new Date(stats.computedAt).toLocaleTimeString()
     : '–';
+
 }
 
 function renderAllNfas(stats) {
