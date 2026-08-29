@@ -24,6 +24,7 @@ public class PriorityAwareStrategy implements DispatchStrategy {
         PrinterProfile requestedProfile = job == null ? null : job.getProfile();
         List<Dispatcher.PrinterRegistration> candidates = printers.stream()
                 .filter(Dispatcher.PrinterRegistration::isOnline)
+                .filter(Dispatcher.PrinterRegistration::hasAvailableCapacity)
                 .filter(printer -> printer.supportsProfile(requestedProfile))
                 .toList();
 
@@ -34,7 +35,9 @@ public class PriorityAwareStrategy implements DispatchStrategy {
         int priority = job != null && job.getPriority() != null ? job.getPriority() : 1;
         Comparator<Dispatcher.PrinterRegistration> byMatchThenLoad = Comparator
                 .comparingInt((Dispatcher.PrinterRegistration printer) -> printer.profileMatchSpecificity(requestedProfile))
+                .thenComparingDouble(Dispatcher.PrinterRegistration::getLoadRatio)
                 .thenComparingInt(Dispatcher.PrinterRegistration::getActiveAssignments)
+                .thenComparingInt(Dispatcher.PrinterRegistration::getAvailableCapacity)
                 .thenComparing(Dispatcher.PrinterRegistration::getId);
 
         if (priority >= HIGH_PRIORITY_THRESHOLD) {
@@ -43,7 +46,8 @@ public class PriorityAwareStrategy implements DispatchStrategy {
 
         if (priority >= MEDIUM_PRIORITY_THRESHOLD) {
             return candidates.stream()
-                    .min(Comparator.comparingInt(Dispatcher.PrinterRegistration::getActiveAssignments)
+                    .min(Comparator.comparingDouble(Dispatcher.PrinterRegistration::getLoadRatio)
+                            .thenComparingInt(Dispatcher.PrinterRegistration::getActiveAssignments)
                             .thenComparingInt(printer -> printer.profileMatchSpecificity(requestedProfile))
                             .thenComparing(Dispatcher.PrinterRegistration::getId));
         }

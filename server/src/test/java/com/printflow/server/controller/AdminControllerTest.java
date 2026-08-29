@@ -45,6 +45,7 @@ class AdminControllerTest {
                 "localhost",
                 50000,
                 true,
+                2,
                 List.of(new PrinterProfile("profile-1", "A4 Color", "A4", "COLOR", false))
         );
 
@@ -72,6 +73,7 @@ class AdminControllerTest {
         request.id = "printer-77";
         request.name = "Printer 77";
         request.online = true;
+        request.capacity = 4;
         request.supportedProfiles = List.of(Map.of("id", "profile-9", "name", "Poster"));
 
         ResponseEntity<?> response = controller.createPrinter(request);
@@ -81,6 +83,7 @@ class AdminControllerTest {
 
         assertEquals(201, response.getStatusCode().value());
         assertEquals("printer-77", captor.getValue().getId());
+        assertEquals(4, captor.getValue().getCapacity());
         assertEquals(1, captor.getValue().getSupportedProfiles().size());
         assertEquals("profile-9", captor.getValue().getSupportedProfiles().getFirst().getId());
     }
@@ -98,11 +101,12 @@ class AdminControllerTest {
                 "localhost",
                 0,
                 true,
+                2,
                 List.of()
         );
 
         when(dispatcher.getRegisteredPrinters()).thenReturn(List.of(printer));
-        when(tcpPrinterServer.connectToPrinter(eq("printer-2"), eq("Printer Two"), eq("127.0.0.1"), eq(60000), eq(true), anyList()))
+        when(tcpPrinterServer.connectToPrinter(eq("printer-2"), eq("Printer Two"), eq("127.0.0.1"), eq(60000), eq(true), eq(2), anyList()))
                 .thenReturn(true);
 
         AdminController controller = new AdminController(dispatcher, repository, tcpPrinterServer, simulatorManager);
@@ -114,7 +118,7 @@ class AdminControllerTest {
 
         assertEquals(200, response.getStatusCode().value());
         assertEquals(Boolean.TRUE, ((Map<String, Object>) response.getBody()).get("connected"));
-        verify(tcpPrinterServer).connectToPrinter(eq("printer-2"), eq("Printer Two"), eq("127.0.0.1"), eq(60000), eq(true), anyList());
+        verify(tcpPrinterServer).connectToPrinter(eq("printer-2"), eq("Printer Two"), eq("127.0.0.1"), eq(60000), eq(true), eq(2), anyList());
     }
 
     @Test
@@ -262,6 +266,7 @@ class AdminControllerTest {
                 "localhost",
                 50000,
                 true,
+                2,
                 List.of()
         );
 
@@ -302,6 +307,7 @@ class AdminControllerTest {
                 "localhost",
                 50000,
                 true,
+                2,
                 List.of()
         );
 

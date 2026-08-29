@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.lang.reflect.Constructor;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -63,7 +64,7 @@ public class TcpPrinterClient {
                     log.info("Connected to print server {}:{}", serverHost, serverPort);
 
                     // Register with supported profiles and capacity info
-                    RegisterPrinterMessage register = new RegisterPrinterMessage(printerId, printerName, serverHost, serverPort, true, supportedProfiles);
+                    RegisterPrinterMessage register = createRegisterMessage();
                     writer.println(register.toJson());
                     ScheduledExecutorService heartbeatExecutor = Executors.newSingleThreadScheduledExecutor();
                     heartbeatExecutor.scheduleAtFixedRate(() -> sendHeartbeat(writer), heartbeatIntervalMs, heartbeatIntervalMs, TimeUnit.MILLISECONDS);
@@ -111,6 +112,26 @@ public class TcpPrinterClient {
             } catch (InterruptedException ignored) {
                 Thread.currentThread().interrupt();
             }
+        }
+    }
+
+    private RegisterPrinterMessage createRegisterMessage() {
+        try {
+            Constructor<RegisterPrinterMessage> fullConstructor = RegisterPrinterMessage.class.getConstructor(
+                    String.class, String.class, String.class, int.class, boolean.class, int.class, List.class
+            );
+            return fullConstructor.newInstance(printerId, printerName, serverHost, serverPort, true, capacity, supportedProfiles);
+        } catch (NoSuchMethodException ignored) {
+            try {
+                Constructor<RegisterPrinterMessage> legacyConstructor = RegisterPrinterMessage.class.getConstructor(
+                        String.class, String.class, String.class, int.class, boolean.class, List.class
+                );
+                return legacyConstructor.newInstance(printerId, printerName, serverHost, serverPort, true, supportedProfiles);
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException("Failed to create register printer message", e);
+            }
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Failed to create register printer message", e);
         }
     }
 

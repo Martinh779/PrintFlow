@@ -23,6 +23,7 @@ public class RoundRobinStrategy implements DispatchStrategy {
         PrinterProfile requestedProfile = job == null ? null : job.getProfile();
         List<Dispatcher.PrinterRegistration> activePrinters = printers.stream()
                 .filter(Dispatcher.PrinterRegistration::isOnline)
+                .filter(Dispatcher.PrinterRegistration::hasAvailableCapacity)
                 .filter(p -> p.supportsProfile(requestedProfile))
                 .toList();
 

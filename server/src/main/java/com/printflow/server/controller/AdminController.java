@@ -136,6 +136,7 @@ public class AdminController {
         response.put("name", printer.getName());
         response.put("host", printer.getHost());
         response.put("port", printer.getPort());
+        response.put("capacity", printer.getCapacity());
         response.put("online", printer.isOnline());
         boolean connected = connectionRegistry != null && connectionRegistry.hasConnection(printer.getId());
         response.put("connected", connected);
@@ -159,6 +160,7 @@ public class AdminController {
         public String name;
         public List<Map<String, Object>> supportedProfiles;
         public Boolean online;
+        public Integer capacity;
     }
 
     @PostMapping("/printers")
@@ -170,10 +172,11 @@ public class AdminController {
         String name = req.name == null ? req.id : req.name;
         List<PrinterProfile> profiles = toSupportedProfiles(req.supportedProfiles);
         boolean online = req.online != null && req.online;
+        int capacity = req.capacity == null ? 2 : req.capacity;
 
-        Dispatcher.PrinterRegistration registration = new Dispatcher.PrinterRegistration(req.id, name, "localhost", 0, online, profiles);
+        Dispatcher.PrinterRegistration registration = new Dispatcher.PrinterRegistration(req.id, name, "localhost", 0, online, capacity, profiles);
         dispatcher.registerPrinter(registration);
-        return ResponseEntity.status(201).body(Map.of("id", req.id, "name", name, "online", online));
+        return ResponseEntity.status(201).body(Map.of("id", req.id, "name", name, "online", online, "capacity", capacity));
     }
 
     private List<PrinterProfile> toSupportedProfiles(List<Map<String, Object>> supportedProfiles) {
@@ -209,6 +212,7 @@ public class AdminController {
         int port = p == null ? 0 : p.getPort();
         String name = p == null ? id : p.getName();
         boolean online = p == null ? true : p.isOnline();
+        int capacity = p == null ? 2 : p.getCapacity();
         List<PrinterProfile> profiles = p == null ? List.of() : p.getSupportedProfiles();
         if (body != null) {
             Object h = body.get("host"); if (h != null) host = String.valueOf(h);
@@ -219,7 +223,7 @@ public class AdminController {
             return ResponseEntity.badRequest().body(Map.of("error", "host and port are required to establish outgoing TCP connection"));
         }
         try {
-            tcpPrinterServer.connectToPrinter(id, name, host, port, online, profiles);
+            tcpPrinterServer.connectToPrinter(id, name, host, port, online, capacity, profiles);
             return ResponseEntity.ok(Map.of("id", id, "connected", true));
         } catch (Exception e) {
             return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));

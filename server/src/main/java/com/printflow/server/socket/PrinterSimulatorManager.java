@@ -14,6 +14,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.lang.reflect.Constructor;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.*;
@@ -69,7 +70,7 @@ public class PrinterSimulatorManager {
                     sockets.put(printerId, sock);
 
                     // send REGISTER
-                    RegisterPrinterMessage reg = new RegisterPrinterMessage(printerId, name, "127.0.0.1", 0, true);
+                    RegisterPrinterMessage reg = createRegisterMessage(printerId, name, workerThreads);
                     sendMessage(sock, reg);
                     log.info("[sim:{}] Connected and sent REGISTER", printerId);
 
@@ -195,6 +196,26 @@ public class PrinterSimulatorManager {
         long safeByReadTimeout = Math.max(250L, socketReadTimeoutMs / 3L);
         long safeByHeartbeatTimeout = Math.max(250L, socketHeartbeatTimeoutMs / 3L);
         return Math.min(configured, Math.min(safeByReadTimeout, safeByHeartbeatTimeout));
+    }
+
+    private RegisterPrinterMessage createRegisterMessage(String printerId, String name, int workerThreads) {
+        try {
+            Constructor<RegisterPrinterMessage> fullConstructor = RegisterPrinterMessage.class.getConstructor(
+                    String.class, String.class, String.class, int.class, boolean.class, int.class, java.util.List.class
+            );
+            return fullConstructor.newInstance(printerId, name, "127.0.0.1", 0, true, workerThreads, java.util.List.of());
+        } catch (NoSuchMethodException ignored) {
+            try {
+                Constructor<RegisterPrinterMessage> legacyConstructor = RegisterPrinterMessage.class.getConstructor(
+                        String.class, String.class, String.class, int.class, boolean.class, java.util.List.class
+                );
+                return legacyConstructor.newInstance(printerId, name, "127.0.0.1", 0, true, java.util.List.of());
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException("Failed to create register printer message", e);
+            }
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Failed to create register printer message", e);
+        }
     }
 
     private void sendHeartbeat(String printerId, Socket socket, AtomicBoolean runFlag) {

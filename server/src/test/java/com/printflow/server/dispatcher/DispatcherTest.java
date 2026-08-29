@@ -161,4 +161,33 @@ class DispatcherTest {
 
         assertTrue(dispatcher.getRegisteredPrinters().getFirst().isOnline());
     }
+
+    @Test
+    void dispatcherLeavesWorkQueuedUntilAPrinterHasCapacityAgain() {
+        Dispatcher dispatcher = new Dispatcher(new RoundRobinStrategy());
+        dispatcher.registerPrinter(new Dispatcher.PrinterRegistration("printer-1", "Printer 1", "localhost", 0, true, 1, List.of()));
+        dispatcher.registerPrinter(new Dispatcher.PrinterRegistration("printer-2", "Printer 2", "localhost", 0, true, 1, List.of()));
+
+        PrintJob job1 = new PrintJob("job-1", "file-1.pdf", new PrinterProfile("profile-1", "Office", "A4", "COLOR", false), 1);
+        PrintJob job2 = new PrintJob("job-2", "file-2.pdf", new PrinterProfile("profile-2", "Office", "A4", "COLOR", false), 1);
+        PrintJob job3 = new PrintJob("job-3", "file-3.pdf", new PrinterProfile("profile-3", "Office", "A4", "COLOR", false), 1);
+
+        dispatcher.enqueue(job1);
+        dispatcher.enqueue(job2);
+        dispatcher.enqueue(job3);
+
+        PrinterAssignment first = dispatcher.dispatchNext().orElseThrow();
+        PrinterAssignment second = dispatcher.dispatchNext().orElseThrow();
+
+        assertTrue(dispatcher.dispatchNext().isEmpty(), "Third job should remain queued while both printers are full");
+        assertEquals(1, dispatcher.queueSize());
+
+        dispatcher.completeAssignment(first.job());
+
+        PrinterAssignment third = dispatcher.dispatchNext().orElseThrow();
+        assertEquals("job-3", third.job().getId());
+        assertEquals(first.printerId(), third.printerId());
+        assertEquals(0, dispatcher.queueSize());
+        assertNotEquals(first.printerId(), second.printerId());
+    }
 }

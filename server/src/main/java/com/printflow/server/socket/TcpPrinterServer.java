@@ -15,6 +15,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.io.*;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
@@ -147,6 +149,7 @@ public class TcpPrinterServer {
                                         registerMessage.getHost(),
                                         registerMessage.getPort(),
                                         registerMessage.isOnline(),
+                                        readCapacity(registerMessage),
                                         registerMessage.getSupportedProfiles()
                                 )
                         );
@@ -218,6 +221,21 @@ public class TcpPrinterServer {
         }
     }
 
+    private int readCapacity(RegisterPrinterMessage registerMessage) {
+        try {
+            Method getter = registerMessage.getClass().getMethod("getCapacity");
+            Object value = getter.invoke(registerMessage);
+            if (value instanceof Integer capacity) {
+                return capacity;
+            }
+        } catch (NoSuchMethodException ignored) {
+            return 2;
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Failed to read printer capacity", e);
+        }
+        return 2;
+    }
+
     private void dispatchPendingJobs() {
         var assignments = dispatcher.dispatchAll();
         if (assignments.isEmpty()) return;
@@ -287,6 +305,10 @@ public class TcpPrinterServer {
      * Sends a REGISTER message and starts a read loop to process status updates.
      */
     public boolean connectToPrinter(String printerId, String name, String host, int port, boolean online, java.util.List<com.printflow.sharedmodel.model.PrinterProfile> supportedProfiles) throws IOException {
+        return connectToPrinter(printerId, name, host, port, online, 2, supportedProfiles);
+    }
+
+    public boolean connectToPrinter(String printerId, String name, String host, int port, boolean online, int capacity, java.util.List<com.printflow.sharedmodel.model.PrinterProfile> supportedProfiles) throws IOException {
         if (printerId == null) throw new IllegalArgumentException("printerId required");
         // Prevent accidental self-connect to the server listen address which causes a loop
         try {
@@ -300,7 +322,7 @@ public class TcpPrinterServer {
         sock.setKeepAlive(true);
         sock.setSoTimeout(socketReadTimeoutMs);
         // send REGISTER immediately
-        RegisterPrinterMessage reg = new RegisterPrinterMessage(printerId, name, host, port, online, supportedProfiles);
+        RegisterPrinterMessage reg = createRegisterMessage(printerId, name, host, port, online, capacity, supportedProfiles);
         sendMessage(sock, reg);
         // if there's already an active incoming connection for this printer, do not overwrite it
         if (printerConnections.containsKey(printerId)) {
@@ -312,7 +334,7 @@ public class TcpPrinterServer {
         printerConnections.put(printerId, sock);
         markPrinterSeen(printerId);
         if (connectionRegistry != null) connectionRegistry.addConnection(printerId);
-        dispatcher.registerPrinter(new Dispatcher.PrinterRegistration(printerId, name, host, port, online, supportedProfiles));
+        dispatcher.registerPrinter(new Dispatcher.PrinterRegistration(printerId, name, host, port, online, capacity, supportedProfiles));
         log.info("Opened outgoing connection and registered printer {} at {}:{}", printerId, host, port);
         dispatchPendingJobs();
         // start reader loop for incoming messages from the printer
@@ -350,6 +372,26 @@ public class TcpPrinterServer {
             }
         });
         return true;
+    }
+
+    private RegisterPrinterMessage createRegisterMessage(String printerId, String name, String host, int port, boolean online, int capacity, java.util.List<com.printflow.sharedmodel.model.PrinterProfile> supportedProfiles) {
+        try {
+            Constructor<RegisterPrinterMessage> fullConstructor = RegisterPrinterMessage.class.getConstructor(
+                    String.class, String.class, String.class, int.class, boolean.class, int.class, java.util.List.class
+            );
+            return fullConstructor.newInstance(printerId, name, host, port, online, capacity, supportedProfiles);
+        } catch (NoSuchMethodException ignored) {
+            try {
+                Constructor<RegisterPrinterMessage> legacyConstructor = RegisterPrinterMessage.class.getConstructor(
+                        String.class, String.class, String.class, int.class, boolean.class, java.util.List.class
+                );
+                return legacyConstructor.newInstance(printerId, name, host, port, online, supportedProfiles);
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException("Failed to create register printer message", e);
+            }
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Failed to create register printer message", e);
+        }
     }
 
     public boolean disconnectPrinter(String printerId) {

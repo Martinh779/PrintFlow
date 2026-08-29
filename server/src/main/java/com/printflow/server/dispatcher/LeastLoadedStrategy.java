@@ -20,7 +20,11 @@ public class LeastLoadedStrategy implements DispatchStrategy {
         return printers.stream()
                 .filter(Objects::nonNull)
                 .filter(Dispatcher.PrinterRegistration::isOnline)
+                .filter(Dispatcher.PrinterRegistration::hasAvailableCapacity)
                 .filter(p -> p.supportsProfile(requestedProfile))
-                .min(Comparator.comparingInt(Dispatcher.PrinterRegistration::getActiveAssignments));
+                .min(Comparator.comparingDouble(Dispatcher.PrinterRegistration::getLoadRatio)
+                        .thenComparingInt(Dispatcher.PrinterRegistration::getActiveAssignments)
+                        .thenComparingInt(Dispatcher.PrinterRegistration::getAvailableCapacity)
+                        .thenComparing(Dispatcher.PrinterRegistration::getId));
     }
 }

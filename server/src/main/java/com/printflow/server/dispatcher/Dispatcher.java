@@ -132,27 +132,33 @@ public class Dispatcher {
             private final String name;
             private final String host;
             private final int port;
+            private final int capacity;
             private volatile boolean online;
             private final AtomicInteger activeAssignments = new AtomicInteger();
             private final java.util.List<PrinterProfile> supportedProfiles;
 
             public PrinterRegistration(String id, String name) {
-                this(id, name, "localhost", 0, true, java.util.List.of());
+                this(id, name, "localhost", 0, true, 2, java.util.List.of());
             }
 
             public PrinterRegistration(String id, String name, boolean online) {
-                this(id, name, "localhost", 0, online, java.util.List.of());
+                this(id, name, "localhost", 0, online, 2, java.util.List.of());
             }
 
             public PrinterRegistration(String id, String name, String host, int port, boolean online) {
-                this(id, name, host, port, online, java.util.List.of());
+                this(id, name, host, port, online, 2, java.util.List.of());
             }
 
             public PrinterRegistration(String id, String name, String host, int port, boolean online, List<PrinterProfile> supportedProfiles) {
+                this(id, name, host, port, online, 2, supportedProfiles);
+            }
+
+            public PrinterRegistration(String id, String name, String host, int port, boolean online, int capacity, List<PrinterProfile> supportedProfiles) {
                 this.id = Objects.requireNonNull(id, "printer id must not be null");
                 this.name = Objects.requireNonNull(name, "printer name must not be null");
                 this.host = host == null ? "localhost" : host;
                 this.port = port;
+                this.capacity = Math.max(1, capacity);
                 this.online = online;
                 this.supportedProfiles = supportedProfiles == null ? java.util.List.of() : supportedProfiles;
             }
@@ -161,6 +167,7 @@ public class Dispatcher {
             public String getName() { return name; }
             public String getHost() { return host; }
             public int getPort() { return port; }
+            public int getCapacity() { return capacity; }
             public boolean isOnline() { return online; }
             public void setOnline(boolean online) { this.online = online; }
 
@@ -179,6 +186,18 @@ public class Dispatcher {
             public int getActiveAssignments() {
                 return activeAssignments.get();
         }
+
+            public int getAvailableCapacity() {
+                return Math.max(0, capacity - activeAssignments.get());
+            }
+
+            public boolean hasAvailableCapacity() {
+                return getAvailableCapacity() > 0;
+            }
+
+            public double getLoadRatio() {
+                return activeAssignments.get() / (double) capacity;
+            }
 
             public List<PrinterProfile> getSupportedProfiles() {
                 return supportedProfiles;
