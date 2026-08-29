@@ -11,4 +11,9 @@ public class AdminWebController {
     public String adminIndex() {
         return "forward:/admin/index.html";
     }
+
+    @GetMapping({"/admin/stats", "/admin/stats/"})
+    public String statsPage() {
+        return "forward:/admin/stats.html";
+    }
 }

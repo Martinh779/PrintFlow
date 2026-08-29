@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>PrintFlow NFA Statistics</title>
+  <link rel="stylesheet" href="/admin/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>PrintFlow NFA Statistics</h1>
+      <p class="muted">Non-functional requirement verification dashboard</p>
+    </div>
+    <nav class="topbar-nav">
+      <a href="/admin" class="nav-link">Dashboard</a>
+      <span class="nav-active">NFA Statistics</span>
+    </nav>
+    <div id="health" class="chip">Loading...</div>
+  </header>
+
+  <div id="notice" class="notice hidden"></div>
+
+  <main style="padding: 16px;">
+    <div class="summary-bar" id="summary-bar">
+      <div class="summary-item"><span class="label">Total Jobs</span><strong id="summary-total">–</strong></div>
+      <div class="summary-item"><span class="label">NFAs Passed</span><strong id="summary-passed" class="status-stable">–</strong></div>
+      <div class="summary-item"><span class="label">NFAs Failed</span><strong id="summary-failed" class="status-degraded">–</strong></div>
+      <div class="summary-item"><span class="label">Last Updated</span><strong id="summary-time">–</strong></div>
+    </div>
+
+    <div id="nfa-grid" class="nfa-grid">
+      <div class="pane nfa-card" id="nfa-01-card"><p class="muted">Loading NFA-01…</p></div>
+      <div class="pane nfa-card" id="nfa-02-card"><p class="muted">Loading NFA-02…</p></div>
+      <div class="pane nfa-card" id="nfa-03-card"><p class="muted">Loading NFA-03…</p></div>
+      <div class="pane nfa-card" id="nfa-04-card"><p class="muted">Loading NFA-04…</p></div>
+      <div class="pane nfa-card" id="nfa-05-card"><p class="muted">Loading NFA-05…</p></div>
+      <div class="pane nfa-card" id="nfa-06-card"><p class="muted">Loading NFA-06…</p></div>
+      <div class="pane nfa-card" id="nfa-07-card"><p class="muted">Loading NFA-07…</p></div>
+    </div>
+  </main>
+
+  <footer>
+    <small>Auto-refresh every 5 s • /admin/stats</small>
+  </footer>
+
+  <script src="/admin/stats.js"></script>
+</body>
+</html>

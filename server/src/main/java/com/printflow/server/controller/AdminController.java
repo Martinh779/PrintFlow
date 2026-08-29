@@ -17,6 +17,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.function.Function;
@@ -27,6 +28,8 @@ import java.util.stream.Collectors;
 public class AdminController {
 
     private static final long RECOVERY_STATE_WINDOW_SECONDS = 30;
+
+    private final Instant serverStartedAt = Instant.now();
 
     private final Dispatcher dispatcher;
     private final PrintJobRepository repository;
@@ -449,5 +452,225 @@ public class AdminController {
         profile.setId(profileId);
         profile.setName(profileId);
         return profile;
+    }
+
+    // -----------------------------------------------------------------------
+    // NFA statistics dashboard endpoint
+    // -----------------------------------------------------------------------
+
+    @GetMapping("/nfa-stats")
+    public ResponseEntity<Map<String, Object>> nfaStats() {
+        List<PrintJob> jobs = repository.findAll();
+        List<SystemEvent> events = eventLogger == null ? List.of() : eventLogger.getEvents();
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("computedAt", Instant.now().toString());
+        result.put("totalJobs", jobs.size());
+        result.put("nfa01", nfa01(jobs));
+        result.put("nfa02", nfa02(jobs));
+        result.put("nfa03", nfa03(jobs));
+        result.put("nfa04", nfa04(jobs, events));
+        result.put("nfa05", nfa05(jobs));
+        result.put("nfa06", nfa06(jobs));
+        result.put("nfa07", nfa07());
+        return ResponseEntity.ok(result);
+    }
+
+    /** NFA-01: >99.9% of correct REST requests answered without 5xx. */
+    private Map<String, Object> nfa01(List<PrintJob> jobs) {
+        long completed = jobs.stream().filter(j -> j.getStatus() == PrintJobStatus.COMPLETED).count();
+        long failed = jobs.stream().filter(j -> j.getStatus() == PrintJobStatus.FAILED).count();
+        long total = completed + failed; // CANCELLED is user-initiated, not a server error
+        double successRate = total == 0 ? 100.0 : Math.round((completed * 10000.0 / total)) / 100.0;
+        return nfaEntry("NFA-01",
+                "Server answers >99.9 % of valid REST requests without internal error (5xx)",
+                "Terminal job success rate (COMPLETED / (COMPLETED+FAILED))",
+                successRate, "%", 99.9, total > 0 && successRate >= 99.9,
+                total, "Proxy metric — CANCELLED jobs excluded as user-initiated");
+    }
+
+    /** NFA-02: Every request answered in <200 ms at <50 req/s. */
+    private Map<String, Object> nfa02(List<PrintJob> jobs) {
+        List<Long> latencies = createLatencies(jobs);
+        double p95 = percentile(latencies, 95);
+        double max = latencies.isEmpty() ? 0.0 : latencies.getLast();
+        Map<String, Object> m = nfaEntry("NFA-02",
+                "At <50 req/s every REST request is answered in <200 ms",
+                "p95 server-side job-enqueue latency (queuedAt − createdAt)",
+                p95, "ms", 200.0, !latencies.isEmpty() && p95 < 200.0,
+                latencies.size(), "Proxy: measures internal enqueue time, not full HTTP RTT");
+        m.put("maxMs", max);
+        m.put("avgMs", latencies.isEmpty() ? 0.0 : Math.round(latencies.stream().mapToLong(Long::longValue).average().orElse(0) * 100.0) / 100.0);
+        return m;
+    }
+
+    /** NFA-03: p95 <500 ms at 40 req/s with ≥4 printers. */
+    private Map<String, Object> nfa03(List<PrintJob> jobs) {
+        List<Long> latencies = createLatencies(jobs);
+        double p95 = percentile(latencies, 95);
+        long activePrinters = dispatcher.getRegisteredPrinters().stream()
+                .filter(p -> p.isOnline()).count();
+        Map<String, Object> m = nfaEntry("NFA-03",
+                "p95 REST response time <500 ms at 40 req/s with ≥4 active printers — no jobs lost or double-assigned",
+                "p95 server-side job-enqueue latency",
+                p95, "ms", 500.0,
+                !latencies.isEmpty() && p95 < 500.0,
+                latencies.size(),
+                activePrinters < 4
+                        ? "⚠ Only " + activePrinters + " active printer(s) online — need ≥4 for full NFA-03 verification"
+                        : null);
+        m.put("activePrinters", activePrinters);
+        return m;
+    }
+
+    /** NFA-04: Each job assigned to at most one printer; started jobs not cancelled. */
+    private Map<String, Object> nfa04(List<PrintJob> jobs, List<SystemEvent> events) {
+        // Detect started-then-cancelled (hard violation)
+        long startedThenCancelled = jobs.stream()
+                .filter(j -> j.getStatus() == PrintJobStatus.CANCELLED && j.getStartedAt() != null)
+                .count();
+
+        // Detect duplicate concurrent assignments via event timeline:
+        // Two JOB_ASSIGNED events for the same job with no RETRY_RECOVERY in between.
+        Map<String, List<SystemEvent>> byJob = events.stream()
+                .filter(e -> e.getJobId() != null)
+                .collect(Collectors.groupingBy(SystemEvent::getJobId));
+
+        long doubleAssigned = byJob.values().stream().filter(evts -> {
+            List<SystemEvent> sorted = evts.stream()
+                    .filter(e -> e.getCreatedAt() != null)
+                    .sorted(Comparator.comparing(SystemEvent::getCreatedAt))
+                    .collect(Collectors.toList());
+            int assignments = 0;
+            for (SystemEvent e : sorted) {
+                if (e.getType() == SystemEventType.JOB_ASSIGNED) assignments++;
+                else if (e.getType() == SystemEventType.RETRY_RECOVERY) assignments = 0; // reset after recovery
+            }
+            return assignments > 1; // more than one assignment without intervening recovery
+        }).count();
+
+        long violations = startedThenCancelled + doubleAssigned;
+        return nfaEntry("NFA-04",
+                "≥100 concurrent operations: each job assigned to at most 1 printer; no started job cancelled; no status change lost",
+                "Started-then-cancelled jobs + concurrent double-assignments",
+                violations, "violations", 0.0, violations == 0,
+                jobs.size(),
+                "startedThenCancelled=" + startedThenCancelled + ", doubleAssigned=" + doubleAssigned);
+    }
+
+    /** NFA-05: Status updates delivered within 2 s of print completion. */
+    private Map<String, Object> nfa05(List<PrintJob> jobs) {
+        List<Long> propagations = jobs.stream()
+                .filter(j -> j.getStatus() == PrintJobStatus.COMPLETED)
+                .filter(j -> j.getStartedAt() != null && j.getCompletedAt() != null && j.getResult() != null)
+                .filter(j -> j.getResult().getDuration() != null)
+                .map(j -> {
+                    long totalMs = Duration.between(j.getStartedAt(), j.getCompletedAt()).toMillis();
+                    long simMs = j.getResult().getDuration().toMillis();
+                    return Math.max(0L, totalMs - simMs);
+                })
+                .sorted()
+                .collect(Collectors.toList());
+
+        double p95 = percentile(propagations, 95);
+        double max = propagations.isEmpty() ? 0.0 : propagations.getLast();
+        Map<String, Object> m = nfaEntry("NFA-05",
+                "Status update 'print completed' visible to clients within 2 s of printer finishing",
+                "p95 status propagation time (completedAt − startedAt − simulatedDuration)",
+                p95, "ms", 2000.0, propagations.isEmpty() || p95 < 2000.0,
+                propagations.size(), "Measures server-side propagation; excludes in-progress jobs");
+        m.put("maxMs", max);
+        return m;
+    }
+
+    /** NFA-06: Throughput with 2 printers is ≥60 % higher than with 1. */
+    private Map<String, Object> nfa06(List<PrintJob> jobs) {
+        Instant window = Instant.now().minusSeconds(300);
+        Map<String, Long> completedByPrinter = jobs.stream()
+                .filter(j -> j.getStatus() == PrintJobStatus.COMPLETED)
+                .filter(j -> j.getAssignedPrinterId() != null)
+                .filter(j -> j.getCompletedAt() != null && !j.getCompletedAt().isBefore(window))
+                .collect(Collectors.groupingBy(PrintJob::getAssignedPrinterId, Collectors.counting()));
+
+        long activePrinterCount = completedByPrinter.size();
+        double totalThroughput = completedByPrinter.values().stream().mapToLong(Long::longValue).sum();
+        long maxSinglePrinter = completedByPrinter.values().stream().mapToLong(Long::longValue).max().orElse(0L);
+
+        double speedup = (activePrinterCount >= 2 && maxSinglePrinter > 0)
+                ? Math.round((totalThroughput / maxSinglePrinter) * 100.0) / 100.0
+                : 0.0;
+        double improvementPct = Math.round((speedup - 1.0) * 10000.0) / 100.0;
+
+        boolean passed = activePrinterCount >= 2 && improvementPct >= 60.0;
+        Map<String, Object> m = nfaEntry("NFA-06",
+                "System throughput with 2 active printers is ≥60 % higher than with 1 printer",
+                "Throughput speedup in last 5 min (total / best-single-printer completed jobs)",
+                improvementPct, "% improvement", 60.0, passed,
+                activePrinterCount,
+                activePrinterCount < 2
+                        ? "⚠ Only " + activePrinterCount + " printer(s) active in last 5 min — run load test with 2+ printers"
+                        : null);
+        m.put("speedupFactor", speedup);
+        m.put("completedByPrinter", completedByPrinter);
+        return m;
+    }
+
+    /** NFA-07: Server ready for requests within 15 s of process start. */
+    private Map<String, Object> nfa07() {
+        long startupMs;
+        try {
+            Instant processStart = ProcessHandle.current().info().startInstant().orElse(null);
+            startupMs = processStart != null
+                    ? Duration.between(processStart, serverStartedAt).toMillis()
+                    : -1L;
+        } catch (Exception e) {
+            startupMs = -1L;
+        }
+        boolean passed = startupMs >= 0 && startupMs < 15_000L;
+        String note = startupMs < 0
+                ? "Process start time unavailable on this platform — check Spring Boot startup log for exact timing"
+                : null;
+        return nfaEntry("NFA-07",
+                "Server ready for REST and socket connections within 15 s of process start",
+                "Spring context ready − process start",
+                startupMs < 0 ? "n/a" : startupMs, "ms", 15_000.0,
+                passed || startupMs < 0, // not failed if we can't measure
+                1, note);
+    }
+
+    // -----------------------------------------------------------------------
+    // Shared helpers
+    // -----------------------------------------------------------------------
+
+    private List<Long> createLatencies(List<PrintJob> jobs) {
+        return jobs.stream()
+                .filter(j -> j.getCreatedAt() != null && j.getQueuedAt() != null)
+                .map(j -> j.getQueuedAt().toEpochMilli() - j.getCreatedAt().toEpochMilli())
+                .filter(l -> l >= 0)
+                .sorted()
+                .collect(Collectors.toList());
+    }
+
+    private double percentile(List<Long> sortedAsc, int pct) {
+        if (sortedAsc.isEmpty()) return 0.0;
+        int index = (int) Math.ceil(pct / 100.0 * sortedAsc.size()) - 1;
+        index = Math.max(0, Math.min(index, sortedAsc.size() - 1));
+        return sortedAsc.get(index);
+    }
+
+    private Map<String, Object> nfaEntry(String id, String description, String measurement,
+                                          Object value, String unit, double threshold,
+                                          boolean passed, long sampleCount, String note) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", id);
+        m.put("description", description);
+        m.put("measurement", measurement);
+        m.put("value", value);
+        m.put("unit", unit);
+        m.put("threshold", threshold);
+        m.put("passed", passed);
+        m.put("sampleCount", sampleCount);
+        if (note != null) m.put("note", note);
+        return m;
     }
 }

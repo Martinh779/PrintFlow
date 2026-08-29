@@ -125,8 +125,118 @@ button:hover { background: #094fcb; }
 
 footer { padding: 10px 16px 16px; color: #4b5d80; }
 
+/* ---- Navigation ---- */
+.topbar-nav {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.nav-link {
+  color: rgba(255,255,255,0.85);
+  background: rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.25);
+  padding: 6px 12px;
+  border-radius: 8px;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
+}
+.nav-link:hover { background: rgba(255,255,255,0.28); }
+.nav-active {
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  border: 1px solid rgba(255,255,255,0.5);
+}
+
+/* ---- NFA stats page ---- */
+.summary-bar {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  background: #fff;
+  border: 1px solid #d9e2f1;
+  border-radius: 12px;
+  box-shadow: 0 4px 10px rgba(18,50,100,0.05);
+}
+.summary-item {
+  display: flex;
+  flex-direction: column;
+  min-width: 120px;
+}
+.summary-item .label { font-size: 11px; color: #4b5d80; }
+.summary-item strong { font-size: 18px; }
+
+.nfa-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 14px;
+}
+
+.nfa-card { border-left: 5px solid #c8d4ea; }
+.nfa-pass { border-left-color: #1a9e50; }
+.nfa-fail { border-left-color: #c0392b; }
+
+.nfa-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.nfa-title { font-weight: 700; font-size: 17px; }
+
+.badge-pass {
+  background: #e8f7ee;
+  color: #0a7f35;
+  border: 1px solid #a3d9b5;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-weight: 700;
+  font-size: 12px;
+}
+.badge-fail {
+  background: #fdf0f0;
+  color: #c0392b;
+  border: 1px solid #f0b0a8;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.nfa-desc { margin: 4px 0 8px; font-size: 13px; line-height: 1.4; }
+.nfa-metric { margin: 6px 0; }
+.nfa-value { font-size: 22px; font-weight: 700; }
+.nfa-threshold { font-size: 12px; }
+.nfa-measurement { margin: 4px 0; }
+.nfa-note {
+  font-size: 12px;
+  color: #7a5800;
+  background: #fff8e6;
+  border: 1px solid #f0d080;
+  border-radius: 6px;
+  padding: 4px 8px;
+  margin-top: 6px;
+}
+.nfa-doc { margin-top: 8px; }
+.btn-doc-toggle {
+  background: transparent;
+  color: #4b5d80;
+  border: 1px solid #c8d4ea;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 8px;
+}
+.btn-doc-toggle:hover { background: #f0f4ff; color: #1247d6; }
+.nfa-doc-text { margin: 6px 0 0; font-size: 12px; line-height: 1.45; }
+
 @media (max-width: 1200px) {
   .layout { grid-template-columns: 1fr; }
   .span-2 { grid-column: span 1; }
   .metric-grid { grid-template-columns: 1fr; }
+  .nfa-grid { grid-template-columns: 1fr; }
 }
