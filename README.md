@@ -16,13 +16,6 @@ PrintFlow is a distributed print job manager built around a Spring Boot REST ser
 - `performance-client` for load generation and throughput metrics
 - `shared-model` for the shared domain model, status machine, and protocol DTOs
 
-## Runbook and project readiness
-
-The project documentation includes operational guidance, configuration notes, benchmark execution details, and current project risks:
-
-- `docs/runbook-and-project-readiness.md`
-- `docs/CODEBASE_GUIDE.md` for the architecture, code walkthrough, lifecycle flow, TCP protocol, and extension guide for new contributors
-
 ## Build and test
 ```bash
 ./mvnw test
