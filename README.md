@@ -31,6 +31,11 @@ Start a simulated printer:
 ```bash
 ./mvnw -pl printer-process spring-boot:run
 ```
+or start multiple:
+```bash
+./mvnw -pl printer-process spring-boot:run "-Dspring-boot.run.arguments=--printer.id=printer-002 --printer.capacity=1"
+```
+
 
 The server listens on the configured socket port and accepts printer registrations over TCP.
 
