@@ -174,4 +174,3 @@ Es wird angenommen, dass PrintFlow-Server und Druckerprozesse auf einem handels�
 | Statusupdates innerhalb von 2 Sekunden | Ein Testauftrag wird 체berwacht. Der Druckerprozess protokolliert den Zeitpunkt des Abschlusses, der Server den Zeitpunkt des Statusupdates f체r den Client. Die Differenz wird gemessen und darf 2 Sekunden nicht 체berschreiten. |
 | Mindestens 60 % Durchsatzsteigerung mit zwei Druckern gegen체ber einem Drucker | Ein festes Set von Druckauftr채gen wird zun채chst mit einem, dann mit zwei Druckern abgearbeitet. Der Dispatcher loggt Start- und Endzeit sowie die Anzahl verarbeiteter Auftr채ge; daraus werden Durchsatz und relative Steigerung berechnet. |
 | Serverstart in weniger als 15 Sekunden | Spring-Boot-Startup-Logs geben die Startzeit aus. Zus채tzlich sendet ein Testclient unmittelbar nach dem Prozessstart einen Dummy-Request, misst die Zeit bis zur ersten erfolgreichen Antwort und verifiziert, dass die 15-Sekunden-Grenze eingehalten wird. |
-|
