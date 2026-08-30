@@ -75,9 +75,11 @@ public class TcpPrinterClient {
                             if (line.isBlank()) {
                                 continue;
                             }
-                            SocketMessage message = SocketMessage.fromJson(line);
-                            if (message == null) continue;
-                            if ("PRINT_JOB".equalsIgnoreCase(message.getType())) {
+                            try {
+                                String messageType = readMessageType(line);
+                                if (!"PRINT_JOB".equalsIgnoreCase(messageType)) {
+                                    continue;
+                                }
                                 PrintJobMessage printJobMessage = SocketMessage.OBJECT_MAPPER.readValue(line, PrintJobMessage.class);
                                 // Submit simulation to thread pool so multiple jobs can be processed concurrently
                                 pool.submit(() -> {
@@ -87,6 +89,8 @@ public class TcpPrinterClient {
                                         log.error("Failed to send status update: {}", e.getMessage());
                                     }
                                 });
+                            } catch (IOException parseError) {
+                                log.warn("Ignoring malformed socket message for printer {}: {}", printerId, parseError.getMessage());
                             }
                         }
                     } finally {
@@ -145,6 +149,13 @@ public class TcpPrinterClient {
         } catch (Exception e) {
             log.debug("Failed to send heartbeat for printer {}: {}", printerId, e.getMessage());
         }
+    }
+
+    private String readMessageType(String jsonPayload) throws IOException {
+        if (jsonPayload == null || jsonPayload.isBlank()) {
+            return null;
+        }
+        return SocketMessage.OBJECT_MAPPER.readTree(jsonPayload).path("type").asText(null);
     }
 
     private void simulatePrint(PrintJobMessage job, PrintWriter writer) throws IOException {

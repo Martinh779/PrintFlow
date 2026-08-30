@@ -284,7 +284,7 @@ async function createSingleJob(form) {
   const profileId = (data.get('profileId') || '').toString().trim();
   const priority = parseInt((data.get('priority') || '1').toString(), 10) || 1;
   const userId = (data.get('userId') || '').toString().trim() || 'admin';
-  const profile = profileId ? { id: profileId } : {};
+  const profile = profileId ? { id: profileId, duplexSupported: false } : { duplexSupported: false };
 
   try {
     const res = await fetch(API.jobs, {

@@ -2,6 +2,8 @@ package com.printflow.sharedmodel.model;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonSetter;
+import com.fasterxml.jackson.annotation.Nulls;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -12,9 +14,10 @@ public class PrinterProfile {
     private String name;
     private String paperSize;
     private String colorMode;
+    @JsonSetter(nulls = Nulls.SKIP)
     private boolean duplexSupported;
 
-    @JsonCreator
+    @JsonCreator(mode = JsonCreator.Mode.PROPERTIES)
     public PrinterProfile(@JsonProperty("id") String id,
                           @JsonProperty("name") String name,
                           @JsonProperty("paperSize") String paperSize,
@@ -25,13 +28,5 @@ public class PrinterProfile {
         this.paperSize = paperSize;
         this.colorMode = colorMode;
         this.duplexSupported = Boolean.TRUE.equals(duplexSupported);
-    }
-
-    public PrinterProfile(String id,
-                          String name,
-                          String paperSize,
-                          String colorMode,
-                          boolean duplexSupported) {
-        this(id, name, paperSize, colorMode, Boolean.valueOf(duplexSupported));
     }
 }
